@@ -316,22 +316,26 @@ class ComprehensiveTraining:
             with torch.no_grad():
                 q_output = self.base_model.generate(
                     **q_inputs,
-                    max_length=50,
+                    max_new_tokens=40,
                     temperature=0.9,
                     do_sample=True
                 )
-            question = self.tokenizer.decode(q_output[0], skip_special_tokens=True)
+            # Only decode generated part
+            q_input_length = q_inputs['input_ids'].shape[1]
+            question = self.tokenizer.decode(q_output[0][q_input_length:], skip_special_tokens=True)
 
             # Generate answer
             a_inputs = self.tokenizer(question, return_tensors='pt').to(self.device)
             with torch.no_grad():
                 a_output = self.base_model.generate(
                     **a_inputs,
-                    max_length=150,
+                    max_new_tokens=100,
                     temperature=0.7,
                     do_sample=True
                 )
-            answer = self.tokenizer.decode(a_output[0], skip_special_tokens=True)
+            # Only decode generated part
+            a_input_length = a_inputs['input_ids'].shape[1]
+            answer = self.tokenizer.decode(a_output[0][a_input_length:], skip_special_tokens=True)
 
             qa_pairs.append((question, answer))
 
@@ -425,6 +429,11 @@ class ComprehensiveTraining:
                 for user_turn, assistant_turn in sequence:
                     full_input = context + user_turn
                     dataset.append((full_input, assistant_turn))
+                    # Print first few samples and periodic updates
+                    if len(dataset) <= 3 or len(dataset) % 500 == 0:
+                        print(f"\n[Sample {len(dataset)} - Clarification]")
+                        print(f"  Input:  {full_input[:80]}...")
+                        print(f"  Output: {assistant_turn[:80]}...")
                     context += f"User: {user_turn}\nAssistant: {assistant_turn}\n"
                     if len(dataset) >= size:
                         break
@@ -438,6 +447,11 @@ class ComprehensiveTraining:
                 for user_turn, assistant_turn in sequence[start_idx:]:
                     full_input = context + user_turn
                     dataset.append((full_input, assistant_turn))
+                    # Print first few samples and periodic updates
+                    if len(dataset) <= 3 or len(dataset) % 500 == 0:
+                        print(f"\n[Sample {len(dataset)} - Deep Conv]")
+                        print(f"  Input:  {full_input[:80]}...")
+                        print(f"  Output: {assistant_turn[:80]}...")
                     context += f"User: {user_turn}\nAssistant: {assistant_turn}\n"
                     if len(dataset) >= size:
                         break
@@ -480,15 +494,38 @@ class ComprehensiveTraining:
                 with torch.no_grad():
                     output = self.base_model.generate(
                         **inputs,
-                        max_length=200,
+                        max_new_tokens=100,
                         temperature=0.7,
                         do_sample=True
                     )
-                answer = self.tokenizer.decode(output[0], skip_special_tokens=True)
-                dataset.append((text, answer))
+                # Only decode the generated tokens, not the input
+                input_length = inputs['input_ids'].shape[1]
+                answer = self.tokenizer.decode(output[0][input_length:], skip_special_tokens=True)
+
+                # Only add if output is not empty (skip if less than 5 chars)
+                if len(answer.strip()) >= 5:
+                    dataset.append((text, answer))
+
+                    # Print first few samples and periodic updates
+                    if len(dataset) <= 3 or len(dataset) % 500 == 0:
+                        output_tokens = len(output[0]) - input_length
+                        print(f"\n[Sample {len(dataset)}]")
+                        print(f"  Input:  {text[:80]}... ({input_length} tokens)")
+                        print(f"  Output: {answer[:80]}... ({output_tokens} tokens)")
 
         dataset = dataset[:size]
-        print(f"Dataset complete with {len(dataset)} examples")
+        print(f"\nDataset complete with {len(dataset)} examples")
+
+        # Print statistics
+        print("\n" + "="*60)
+        print("DATASET STATISTICS")
+        print("="*60)
+        total_input_chars = sum(len(inp) for inp, _ in dataset)
+        total_output_chars = sum(len(out) for _, out in dataset)
+        print(f"Total samples: {len(dataset)}")
+        print(f"Avg input length: {total_input_chars / len(dataset):.1f} chars")
+        print(f"Avg output length: {total_output_chars / len(dataset):.1f} chars")
+        print("="*60)
 
         # Save if requested
         if save:
@@ -526,6 +563,14 @@ class ComprehensiveTraining:
                 save=True,
                 cache_path=cache_path
             )
+
+        # Filter out empty outputs
+        original_size = len(dataset)
+        dataset = [(inp, out) for inp, out in dataset if len(out.strip()) >= 5]
+        filtered_count = original_size - len(dataset)
+        if filtered_count > 0:
+            print(f"⚠️  Filtered out {filtered_count} samples with empty outputs")
+            print(f"✓ Training with {len(dataset)} valid samples")
 
         for col_idx in column_indices:
             print(f"\nTraining column {col_idx}...")
@@ -841,8 +886,10 @@ def main():
 
 if __name__ == "__main__":
     try:
-        columns, output_projection, base_model, tokenizer = main()
-        print("\n✓ Pretraining successful!")
+        result = main()
+        if result is not None:
+            columns, output_projection, base_model, tokenizer = result
+            print("\n✓ Pretraining successful!")
     except Exception as e:
         print(f"\n✗ Error during pretraining: {e}")
         import traceback
