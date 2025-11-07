@@ -807,7 +807,7 @@ def main():
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='Pretrain PNN columns with dataset caching')
     parser.add_argument('--epochs', type=int, default=3, help='Number of training epochs')
-    parser.add_argument('--batch-size', type=int, default=4, help='Batch size for training')
+    parser.add_argument('--batch-size', type=int, default=32, help='Batch size for training (default: 32 for optimal GPU utilization)')
     parser.add_argument('--dataset-size', type=int, default=1000, help='Number of examples to generate')
     parser.add_argument('--no-cache', action='store_true', help='Regenerate dataset even if cache exists')
     parser.add_argument('--cache-path', type=str, default='datasets/pretraining_dataset.pkl',
@@ -858,8 +858,15 @@ def main():
     print(f"Hidden size: {hidden_size}")
     print(f"Vocabulary size: {vocab_size}")
 
+    # Enable PyTorch optimizations for faster training
+    print("\n2. Enabling PyTorch optimizations...")
+    torch.backends.cudnn.benchmark = True  # Auto-tune kernels for your hardware
+    torch.backends.cuda.matmul.allow_tf32 = True  # Faster FP32 matrix multiplications
+    print("   ✓ cuDNN benchmark mode enabled")
+    print("   ✓ TF32 matrix multiplication enabled")
+
     # Create 4 columns
-    print("\n2. Creating 4 columns...")
+    print("\n3. Creating 4 columns...")
     columns = nn.ModuleList([
         create_column(hidden_size) for _ in range(4)
     ])
@@ -880,7 +887,7 @@ def main():
     print(f"Created 4 columns, each with {sum(p.numel() for p in columns[0].parameters()) / 1e6:.2f}M parameters")
 
     # Initialize training module
-    print("\n3. Initializing comprehensive training...")
+    print("\n4. Initializing comprehensive training...")
 
     trainer = ComprehensiveTraining(
         base_model=base_model,
@@ -921,7 +928,7 @@ def main():
     print(f"  Cache path: {args.cache_path}")
 
     # Start pretraining
-    print("\n4. Starting pretraining to infuse columns with base knowledge...")
+    print("\n5. Starting pretraining to infuse columns with base knowledge...")
     print("-" * 60)
 
     start_time = time.time()
