@@ -589,7 +589,6 @@ class ComprehensiveTraining:
             epoch_losses = []
 
             for epoch in range(epochs):
-                print(f"\n--- Epoch {epoch + 1}/{epochs} ---")
                 epoch_start_time = time.time()
 
                 random.shuffle(dataset)
@@ -690,39 +689,21 @@ class ComprehensiveTraining:
                         batch_times.append(batch_time)
                         samples_processed += len(batch)
 
-                        # Print progress every 50 batches
-                        if num_batches % 50 == 0 or num_batches == 1:
-                            avg_loss_so_far = total_loss / num_batches
-                            avg_batch_time = sum(batch_times[-50:]) / min(50, len(batch_times))
-                            samples_per_sec = len(batch) / avg_batch_time if avg_batch_time > 0 else 0
+                        # Store batch info for end-of-epoch summary
+                        # (removed frequent batch printing for cleaner output)
 
-                            # Calculate ETA
-                            batches_remaining = total_batches - num_batches
-                            eta_seconds = batches_remaining * avg_batch_time
-                            eta_min = eta_seconds / 60
-
-                            # GPU memory if available
-                            gpu_mem = ""
-                            if self.device.type == 'cuda':
-                                mem_allocated = torch.cuda.memory_allocated() / 1e9
-                                gpu_mem = f" | GPU: {mem_allocated:.1f}GB"
-
-                            print(f"  [Batch {num_batches:4d}/{total_batches}] "
-                                  f"Loss: {loss_val:7.4f} | "
-                                  f"Avg: {avg_loss_so_far:7.4f} | "
-                                  f"{samples_per_sec:4.1f} samp/s | "
-                                  f"ETA: {eta_min:4.1f}m{gpu_mem}")
-
-                # Epoch summary
+                # Epoch summary - consolidated single line
                 epoch_time = time.time() - epoch_start_time
 
                 if num_batches > 0:
                     avg_epoch_loss = total_loss / num_batches
                     epoch_losses.append(avg_epoch_loss)
 
-                    # Calculate loss statistics
+                    # Calculate loss statistics and speed
                     min_loss = min(batch_losses_list)
                     max_loss = max(batch_losses_list)
+                    avg_batch_time = sum(batch_times) / len(batch_times) if batch_times else 0
+                    samples_per_sec = samples_processed / epoch_time if epoch_time > 0 else 0
 
                     # Loss trend indicator
                     trend = ""
@@ -735,33 +716,20 @@ class ComprehensiveTraining:
                         else:
                             trend = f" → {abs(change_pct):.1f}%"
 
-                    print(f"\n  ✓ Epoch {epoch + 1} Complete:")
-                    print(f"    Loss: {avg_epoch_loss:.4f}{trend} (min: {min_loss:.4f}, max: {max_loss:.4f})")
-                    print(f"    Time: {epoch_time/60:.1f} min | Batches: {num_batches} | Samples: {samples_processed}")
+                    # GPU memory
+                    gpu_mem = ""
+                    if self.device.type == 'cuda':
+                        mem_allocated = torch.cuda.memory_allocated() / 1e9
+                        gpu_mem = f" | GPU: {mem_allocated:.1f}GB"
 
-                    # Quick test after each epoch
-                    print(f"\n  Quick Test:")
-                    test_prompt = "Hello, how are you?"
-                    inputs = self.tokenizer(test_prompt, return_tensors='pt', truncation=True, max_length=128).to(self.device)
-
-                    with torch.no_grad():
-                        base_outputs = self.base_model(**inputs, output_hidden_states=True)
-                        base_hidden = base_outputs.hidden_states[-1]
-                        base_logits = base_outputs.logits
-                        base_pred = torch.argmax(base_logits[0, -1, :])
-                        base_token = self.tokenizer.decode([base_pred])
-
-                        # Cast to float32 for column, then back to float16 for output projection
-                        column_out = self.columns[col_idx](base_hidden.float())
-                        column_logits = self.output_projection(column_out.half())
-                        col_pred = torch.argmax(column_logits[0, -1, :])
-                        col_token = self.tokenizer.decode([col_pred])
-
-                        status = "✓" if col_token != '<|endoftext|>' else "✗"
-                        print(f"    '{test_prompt}' → Base: '{base_token}' | Column {col_idx}: '{col_token}' {status}")
+                    # Print consolidated single-line summary
+                    print(f"[Epoch {epoch+1:2d}/{epochs}][Batch {num_batches:4d}/{total_batches}] "
+                          f"Loss: {avg_epoch_loss:7.4f}{trend} (min: {min_loss:.4f}, max: {max_loss:.4f}) | "
+                          f"{samples_per_sec:4.1f} samp/s{gpu_mem} | "
+                          f"Time: {epoch_time/60:.1f}m | Batches: {num_batches} | Samples: {samples_processed}")
 
                 else:
-                    print(f"\n  ⚠️  Epoch {epoch + 1}: No batches processed!")
+                    print(f"[Epoch {epoch+1:2d}/{epochs}] ⚠️  No batches processed!")
 
             # Column training summary
             print(f"\n{'='*70}")
