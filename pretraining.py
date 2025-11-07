@@ -573,7 +573,9 @@ class ComprehensiveTraining:
             print(f"✓ Training with {len(dataset)} valid samples")
 
         for col_idx in column_indices:
-            print(f"\nTraining column {col_idx}...")
+            print(f"\n{'='*70}")
+            print(f"COLUMN {col_idx} TRAINING")
+            print(f"{'='*70}")
 
             # Create optimizer for this column
             optimizer = torch.optim.AdamW(
@@ -582,14 +584,29 @@ class ComprehensiveTraining:
                 lr=1e-4
             )
 
+            # Track losses across epochs for comparison
+            epoch_losses = []
+
             for epoch in range(epochs):
+                print(f"\n--- Epoch {epoch + 1}/{epochs} ---")
+                epoch_start_time = time.time()
+
                 random.shuffle(dataset)
                 total_loss = 0
                 num_batches = 0
+                batch_losses_list = []
+
+                # Calculate total batches for progress tracking
+                total_batches = (len(dataset) + batch_size - 1) // batch_size
+
+                # For speed tracking
+                samples_processed = 0
+                batch_times = []
 
                 for i in range(0, len(dataset), batch_size):
+                    batch_start_time = time.time()
                     batch = dataset[i:i + batch_size]
-                    batch_loss = 0
+                    batch_losses = []
 
                     for text_input, target in batch:
                         # Tokenize
@@ -615,31 +632,141 @@ class ComprehensiveTraining:
                         column_logits = self.output_projection(column_out)
 
                         # KL divergence loss - column should match base distribution
-                        loss = F.kl_div(
-                            F.log_softmax(column_logits.view(-1, column_logits.size(-1)), dim=-1),
-                            F.softmax(base_logits.view(-1, base_logits.size(-1)), dim=-1),
-                            reduction='batchmean'
-                        )
+                        # Use more numerically stable computation
+                        column_log_probs = F.log_softmax(column_logits.view(-1, column_logits.size(-1)), dim=-1)
+                        base_probs = F.softmax(base_logits.view(-1, base_logits.size(-1)), dim=-1)
 
-                        # Add slight noise to prevent exact copying
-                        loss += 0.001 * torch.randn(1).item()
+                        # Check for nan/inf before computing loss
+                        if torch.isnan(column_log_probs).any() or torch.isinf(column_log_probs).any():
+                            print(f"    WARNING: Column logits contain nan/inf, skipping sample")
+                            continue
+                        if torch.isnan(base_probs).any() or torch.isinf(base_probs).any():
+                            print(f"    WARNING: Base probs contain nan/inf, skipping sample")
+                            continue
 
-                        batch_loss += loss
+                        loss = F.kl_div(column_log_probs, base_probs, reduction='batchmean')
 
-                    # Optimize
-                    if batch_loss > 0:
-                        avg_loss = batch_loss / len(batch)
+                        # Check loss validity
+                        if torch.isnan(loss) or torch.isinf(loss):
+                            print(f"    WARNING: Loss is nan/inf, skipping sample")
+                            continue
+
+                        batch_losses.append(loss)
+
+                    # Optimize if we have losses
+                    if len(batch_losses) > 0:
+                        # Stack and average losses
+                        avg_loss = torch.stack(batch_losses).mean()
+
                         optimizer.zero_grad()
                         avg_loss.backward()
-                        torch.nn.utils.clip_grad_norm_(self.columns[col_idx].parameters(), 1.0)
+
+                        # Get gradient norm for monitoring
+                        grad_norm = torch.nn.utils.clip_grad_norm_(self.columns[col_idx].parameters(), 1.0)
+
                         optimizer.step()
 
-                        total_loss += avg_loss.item()
+                        # Check if weights have nan after optimizer step
+                        weights_have_nan = False
+                        for param in self.columns[col_idx].parameters():
+                            if torch.isnan(param).any() or torch.isinf(param).any():
+                                print(f"    ERROR: Column weights contain nan/inf after optimizer step!")
+                                weights_have_nan = True
+                                break
+
+                        if weights_have_nan:
+                            print(f"    Stopping training - weights corrupted")
+                            return dataset
+
+                        loss_val = avg_loss.item()
+                        total_loss += loss_val
+                        batch_losses_list.append(loss_val)
                         num_batches += 1
+
+                        # Track timing
+                        batch_time = time.time() - batch_start_time
+                        batch_times.append(batch_time)
+                        samples_processed += len(batch)
+
+                        # Print progress every 50 batches
+                        if num_batches % 50 == 0 or num_batches == 1:
+                            avg_loss_so_far = total_loss / num_batches
+                            avg_batch_time = sum(batch_times[-50:]) / min(50, len(batch_times))
+                            samples_per_sec = len(batch) / avg_batch_time if avg_batch_time > 0 else 0
+
+                            # Calculate ETA
+                            batches_remaining = total_batches - num_batches
+                            eta_seconds = batches_remaining * avg_batch_time
+                            eta_min = eta_seconds / 60
+
+                            # GPU memory if available
+                            gpu_mem = ""
+                            if self.device.type == 'cuda':
+                                mem_allocated = torch.cuda.memory_allocated() / 1e9
+                                gpu_mem = f" | GPU: {mem_allocated:.1f}GB"
+
+                            print(f"  [Batch {num_batches:4d}/{total_batches}] "
+                                  f"Loss: {loss_val:7.4f} | "
+                                  f"Avg: {avg_loss_so_far:7.4f} | "
+                                  f"{samples_per_sec:4.1f} samp/s | "
+                                  f"ETA: {eta_min:4.1f}m{gpu_mem}")
+
+                # Epoch summary
+                epoch_time = time.time() - epoch_start_time
 
                 if num_batches > 0:
                     avg_epoch_loss = total_loss / num_batches
-                    print(f"  Epoch {epoch + 1}/{epochs}, Loss: {avg_epoch_loss:.4f}")
+                    epoch_losses.append(avg_epoch_loss)
+
+                    # Calculate loss statistics
+                    min_loss = min(batch_losses_list)
+                    max_loss = max(batch_losses_list)
+
+                    # Loss trend indicator
+                    trend = ""
+                    if len(epoch_losses) > 1:
+                        change_pct = ((epoch_losses[-1] - epoch_losses[-2]) / epoch_losses[-2]) * 100
+                        if change_pct < -1:
+                            trend = f" ↓ {abs(change_pct):.1f}%"
+                        elif change_pct > 1:
+                            trend = f" ↑ {change_pct:.1f}%"
+                        else:
+                            trend = f" → {abs(change_pct):.1f}%"
+
+                    print(f"\n  ✓ Epoch {epoch + 1} Complete:")
+                    print(f"    Loss: {avg_epoch_loss:.4f}{trend} (min: {min_loss:.4f}, max: {max_loss:.4f})")
+                    print(f"    Time: {epoch_time/60:.1f} min | Batches: {num_batches} | Samples: {samples_processed}")
+
+                    # Quick test after each epoch
+                    print(f"\n  Quick Test:")
+                    test_prompt = "Hello, how are you?"
+                    inputs = self.tokenizer(test_prompt, return_tensors='pt', truncation=True, max_length=128).to(self.device)
+
+                    with torch.no_grad():
+                        base_outputs = self.base_model(**inputs, output_hidden_states=True)
+                        base_hidden = base_outputs.hidden_states[-1]
+                        base_logits = base_outputs.logits
+                        base_pred = torch.argmax(base_logits[0, -1, :])
+                        base_token = self.tokenizer.decode([base_pred])
+
+                        column_out = self.columns[col_idx](base_hidden)
+                        column_logits = self.output_projection(column_out)
+                        col_pred = torch.argmax(column_logits[0, -1, :])
+                        col_token = self.tokenizer.decode([col_pred])
+
+                        status = "✓" if col_token != '<|endoftext|>' else "✗"
+                        print(f"    '{test_prompt}' → Base: '{base_token}' | Column {col_idx}: '{col_token}' {status}")
+
+                else:
+                    print(f"\n  ⚠️  Epoch {epoch + 1}: No batches processed!")
+
+            # Column training summary
+            print(f"\n{'='*70}")
+            print(f"COLUMN {col_idx} TRAINING COMPLETE")
+            if len(epoch_losses) > 0:
+                print(f"Final Loss: {epoch_losses[-1]:.4f} | Initial: {epoch_losses[0]:.4f} | "
+                      f"Improvement: {((epoch_losses[0] - epoch_losses[-1]) / epoch_losses[0] * 100):.1f}%")
+            print(f"{'='*70}")
 
         print("\nPretraining complete!")
         return dataset  # Return for potential analysis
