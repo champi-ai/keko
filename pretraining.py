@@ -577,10 +577,11 @@ class ComprehensiveTraining:
             print(f"COLUMN {col_idx} TRAINING")
             print(f"{'='*70}")
 
-            # Create optimizer for this column
+            # Create optimizer for this column ONLY
+            # NOTE: output_projection is frozen - it's initialized from base model LM head
+            # and shared across all columns. Training it would corrupt it for other columns.
             optimizer = torch.optim.AdamW(
-                list(self.columns[col_idx].parameters()) +
-                list(self.output_projection.parameters()),
+                self.columns[col_idx].parameters(),
                 lr=1e-4
             )
 
