@@ -628,9 +628,10 @@ class ComprehensiveTraining:
                             base_hidden = base_outputs.hidden_states[-1]
                             base_logits = base_outputs.logits
 
-                        # Column forward pass
-                        column_out = self.columns[col_idx](base_hidden)
-                        column_logits = self.output_projection(column_out)
+                        # Column forward pass - cast to float32 for numerical stability
+                        # Base hidden is float16, column is float32, output_projection is float16
+                        column_out = self.columns[col_idx](base_hidden.float())
+                        column_logits = self.output_projection(column_out.half())
 
                         # KL divergence loss - column should match base distribution
                         # Use more numerically stable computation
@@ -750,8 +751,9 @@ class ComprehensiveTraining:
                         base_pred = torch.argmax(base_logits[0, -1, :])
                         base_token = self.tokenizer.decode([base_pred])
 
-                        column_out = self.columns[col_idx](base_hidden)
-                        column_logits = self.output_projection(column_out)
+                        # Cast to float32 for column, then back to float16 for output projection
+                        column_out = self.columns[col_idx](base_hidden.float())
+                        column_logits = self.output_projection(column_out.half())
                         col_pred = torch.argmax(column_logits[0, -1, :])
                         col_token = self.tokenizer.decode([col_pred])
 
@@ -774,7 +776,13 @@ class ComprehensiveTraining:
 
 
 def create_column(hidden_size):
-    """Create a single column with 3 layers"""
+    """Create a single column with 3 layers
+
+    NOTE: Kept in float32 for training stability. AdamW optimizer has numerical
+    issues with float16 that cause NaN/Inf after optimizer steps. The base model
+    stays in float16, we just cast the hidden states to float32 when passing
+    through columns.
+    """
     return nn.Sequential(
         # Layer 1
         nn.Linear(hidden_size, hidden_size),
@@ -789,7 +797,7 @@ def create_column(hidden_size):
         # Layer 3
         nn.Linear(hidden_size, hidden_size),
         nn.LayerNorm(hidden_size)
-    ).half()  # Convert to float16 to match base model
+    )  # Keep in float32 for optimizer stability
 
 
 def main():
@@ -856,8 +864,8 @@ def main():
         create_column(hidden_size) for _ in range(4)
     ])
 
-    # Move columns to device and ensure float16
-    columns = columns.to(device).half()
+    # Move columns to device - keep in float32 for optimizer stability
+    columns = columns.to(device)
 
     # Create output projection and convert to float16
     output_projection = nn.Linear(hidden_size, vocab_size).to(device).half()
