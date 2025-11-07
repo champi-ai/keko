@@ -993,8 +993,8 @@ def main():
 
             # Test each column
             for col_idx in range(4):
-                column_out = columns[col_idx](base_hidden)
-                column_logits = output_projection(column_out)
+                column_out = columns[col_idx](base_hidden.float())
+                column_logits = output_projection(column_out.half())
 
                 col_pred = torch.argmax(column_logits[0, -1, :])
                 col_token = tokenizer.decode([col_pred])
