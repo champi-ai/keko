@@ -105,7 +105,7 @@ def test_save_load():
 
     # Test save
     print("\n3. Testing save functionality...")
-    cache_path = "datasets/test_dataset.pkl"
+    cache_path = "keko_datasets/test_dataset.pkl"
     trainer.save_dataset(mock_dataset, cache_path)
 
     # Verify files exist

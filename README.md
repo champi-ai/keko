@@ -58,6 +58,20 @@ graph TD
 - Creates "uncertainty masks" for selective column routing
 - Drives the specialization process
 
+## 🔁 Desired Uncertainty Flow
+
+The documentation and specs describe a multi-stage pipeline that turns inference-time hesitation into learning opportunities. Following that flow helps the scripts work as a cohesive continual-learning loop:
+
+1. **Inference / Hidden Representation** – The frozen base (`main.py` / `uncertain.py`) encodes inputs into hidden states, which feed every downstream signal.
+2. **Uncertainty Decoder / Monitor** – A dedicated module (inspired by `keko_uncertainty_v_3.md` and the masks in `uncertain.py:86-199`) evaluates logits/entropy, produces a mask, and tags tokens whose confidence lands in the configured uncertainty window (≈0.3–0.7) or whose entropy exceeds recent expectations.
+3. **Clarification Decision** – Medium-severity cases prefer clarification: the `ClarificationEngine` (as sketched in the specs) drafts a targeted meta-query, logs the clarification buffer, and records pre/post entropy to compute clarification gain.
+4. **Column Proxy & Routing** – High uncertainty routes through the appropriate columns, with complementarity tracking leading to freezing or reactivation. Columns augmented with lateral adapters serve as proxies for the uncertain regions.
+5. **Memory/Context Integration** – Retrieved episodic memories or clarified replies get prepended to future prompts, enriching the input space before the next uncertainty check.
+6. **Buffering & Background Training** – Every uncertain or clarified sample is queued (weighting by delta uncertainty) and consumed during idle-time training (`uncertain.py:320-360`), so columns learn from the most informative events.
+7. **Metrics + Safety Checks** – AUT, URR, Clarification Efficiency, and TSM are tracked, while entropy clipping, dynamic thresholds, and queue throttling keep the flow stable (`KEKO_Uncertainty_Specification.md:69-128`).
+
+Keeping this desired flow in mind ensures inference, clarification, column specialization, and background training are integrated rather than disjointed processes.
+
 ## 📄 Three Implementation Files
 
 ### `main.py` - Full Progressive Neural Network
@@ -187,7 +201,7 @@ trainer.pretrain_columns(
     epochs=3,
     batch_size=4,
     use_cache=True,  # Load from cache if available
-    cache_path='datasets/pretraining_dataset.pkl'
+    cache_path='keko_datasets/pretraining_dataset.pkl'
 )
 
 # Or generate new dataset
@@ -432,6 +446,22 @@ uncertain_mask, prob_scores = model.detect_uncertainty(logits)
 print(f"Uncertain tokens: {uncertain_mask.sum().item()}")
 print(f"Avg uncertainty: {prob_scores[uncertain_mask].mean().item():.3f}")
 ```
+
+## 📦 Dataset Generation for Uncertainty Training
+
+`dataset_generator` captures prompt-response pairs from the frozen SmolLM base and enriches each example with per-token confidence/uncertainty metadata. It saves results in a HuggingFace-compatible folder (`datasets/keko_factset` by default) so your uncertainty curriculum can sample failures, ambiguous tokens, and high-entropy spans. Pass `--save-jsonl` to also emit a newline-delimited JSONL export alongside the dataset directory for easier integration with other tools.
+
+Generate a new fact-response corpus with:
+
+```bash
+python -m dataset_generator.cli \
+  --output-path datasets/keko_factset \
+  --max-tokens 64 \
+  --temperature 0.7 \
+  --num-workers 2
+```
+
+Provide `--prompts-file` for your own seed queries, `--num-samples` to limit the run, `--save-json` to dump JSON, `--save-jsonl` to emit newline-delimited JSONL, `--repetition-penalty` to discourage repeated phrases, and `--num-workers` to parallelize the base-model calls. The resulting dataset includes `prompt`, `response`, `token_confidences`, and aggregated uncertainty statistics, making it ready for downstream curriculum learning or logging.
 
 ## 📄 Current Limitations & Future Work
 

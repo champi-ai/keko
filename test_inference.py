@@ -32,7 +32,7 @@ def create_column(hidden_size):
         # Layer 3
         nn.Linear(hidden_size, hidden_size),
         nn.LayerNorm(hidden_size)
-    ).half()
+    )
 
 
 def load_checkpoint(checkpoint_path: str, device: str = 'cuda'):
@@ -88,7 +88,7 @@ def initialize_model(checkpoint, model_name: str = "HuggingFaceTB/SmolLM-360M-In
     columns = nn.ModuleList([
         create_column(hidden_size) for _ in range(4)
     ])
-    columns = columns.to(device).half()
+    columns = columns.to(device)
 
     # Load column weights
     columns.load_state_dict(checkpoint['columns_state_dict'])
@@ -96,7 +96,7 @@ def initialize_model(checkpoint, model_name: str = "HuggingFaceTB/SmolLM-360M-In
 
     # Create output projection
     print("\n3. Creating output projection...")
-    output_projection = nn.Linear(hidden_size, vocab_size).to(device).half()
+    output_projection = nn.Linear(hidden_size, vocab_size).to(device)
     output_projection.load_state_dict(checkpoint['output_projection_state_dict'])
     print(f"   ✓ Output projection loaded")
 

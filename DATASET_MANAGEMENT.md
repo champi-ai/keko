@@ -333,6 +333,7 @@ class CustomTraining(ComprehensiveTraining):
 ```
 
 ### Programmatic Access
+
 ```python
 from pretraining import ComprehensiveTraining
 
@@ -343,7 +344,7 @@ trainer = ComprehensiveTraining(base_model, tokenizer, columns, output_proj)
 dataset = trainer.create_comprehensive_dataset(
     size=5000,
     save=True,
-    cache_path="datasets/my_dataset.pkl"
+    cache_path="keko_datasets/my_dataset.pkl"
 )
 
 # Load existing dataset
