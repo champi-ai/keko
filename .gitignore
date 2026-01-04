@@ -200,3 +200,10 @@ $RECYCLE.BIN/
 # Linux
 .directory
 .Trash-*
+
+# Model checkpoints and training artifacts
+*.pt
+*.pth
+*.ckpt
+pretrained_columns/
+expandable_pnn_state.pt

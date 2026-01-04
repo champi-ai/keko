@@ -1,0 +1,50 @@
+{
+  "citation": "",
+  "description": "",
+  "features": {
+    "prompt": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "response": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "mean_confidence": {
+      "dtype": "float64",
+      "_type": "Value"
+    },
+    "mean_uncertainty": {
+      "dtype": "float64",
+      "_type": "Value"
+    },
+    "uncertainty_ratio": {
+      "dtype": "float64",
+      "_type": "Value"
+    },
+    "tokens": {
+      "feature": {
+        "dtype": "string",
+        "_type": "Value"
+      },
+      "_type": "List"
+    },
+    "token_confidences": {
+      "feature": {
+        "dtype": "float64",
+        "_type": "Value"
+      },
+      "_type": "List"
+    },
+    "created_at": {
+      "dtype": "string",
+      "_type": "Value"
+    },
+    "worker_id": {
+      "dtype": "int64",
+      "_type": "Value"
+    }
+  },
+  "homepage": "",
+  "license": ""
+}

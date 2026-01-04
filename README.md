@@ -58,6 +58,20 @@ graph TD
 - Creates "uncertainty masks" for selective column routing
 - Drives the specialization process
 
+## 🔁 Desired Uncertainty Flow
+
+The documentation and specs describe a multi-stage pipeline that turns inference-time hesitation into learning opportunities. Following that flow helps the scripts work as a cohesive continual-learning loop:
+
+1. **Inference / Hidden Representation** – The frozen base (`main.py` / `uncertain.py`) encodes inputs into hidden states, which feed every downstream signal.
+2. **Uncertainty Decoder / Monitor** – A dedicated module (inspired by `keko_uncertainty_v_3.md` and the masks in `uncertain.py:86-199`) evaluates logits/entropy, produces a mask, and tags tokens whose confidence lands in the configured uncertainty window (≈0.3–0.7) or whose entropy exceeds recent expectations.
+3. **Clarification Decision** – Medium-severity cases prefer clarification: the `ClarificationEngine` (as sketched in the specs) drafts a targeted meta-query, logs the clarification buffer, and records pre/post entropy to compute clarification gain.
+4. **Column Proxy & Routing** – High uncertainty routes through the appropriate columns, with complementarity tracking leading to freezing or reactivation. Columns augmented with lateral adapters serve as proxies for the uncertain regions.
+5. **Memory/Context Integration** – Retrieved episodic memories or clarified replies get prepended to future prompts, enriching the input space before the next uncertainty check.
+6. **Buffering & Background Training** – Every uncertain or clarified sample is queued (weighting by delta uncertainty) and consumed during idle-time training (`uncertain.py:320-360`), so columns learn from the most informative events.
+7. **Metrics + Safety Checks** – AUT, URR, Clarification Efficiency, and TSM are tracked, while entropy clipping, dynamic thresholds, and queue throttling keep the flow stable (`KEKO_Uncertainty_Specification.md:69-128`).
+
+Keeping this desired flow in mind ensures inference, clarification, column specialization, and background training are integrated rather than disjointed processes.
+
 ## 📄 Three Implementation Files
 
 ### `main.py` - Full Progressive Neural Network
@@ -130,26 +144,93 @@ model.save_state("my_model_state.pt")
 ```
 
 ### Pretraining Columns
+
+#### Quick Start: Using Cached Dataset (Recommended)
+
+The repository includes a pre-generated dataset of 5,000 samples (4,738 valid after filtering) for immediate training:
+
+```bash
+# Run pretraining with cached dataset (default)
+python pretraining.py --epochs 3 --batch-size 4 --dataset-size 5000
+
+# Custom cache path
+python pretraining.py --cache-path datasets/my_dataset.pkl
+
+# Inspect cached dataset without training
+python pretraining.py --inspect-cache
+```
+
+**Current Dataset Details** (`datasets/pretraining_dataset.pkl`):
+- **Total samples**: 5,000 generated, 4,738 valid after filtering
+- **Created**: 2025-11-05
+- **Avg input length**: 651.7 chars
+- **Avg output length**: 136.9 chars
+- **Data mix**: Simple queries, clarification sequences, deep conversations, complex requests
+
+#### Generate New Dataset
+
+```bash
+# Generate only (no training)
+python pretraining.py --generate-only --dataset-size 1000 --cache-path datasets/new_dataset.pkl
+
+# Force regenerate even if cache exists
+python pretraining.py --no-cache --dataset-size 5000
+```
+
+#### Python API
+
 ```python
 from pretraining import ComprehensiveTraining, create_column
 from transformers import AutoModelForCausalLM, AutoTokenizer
+import torch.nn as nn
 
 # Load base model
 base_model = AutoModelForCausalLM.from_pretrained("HuggingFaceTB/SmolLM-360M-Instruct")
 tokenizer = AutoTokenizer.from_pretrained("HuggingFaceTB/SmolLM-360M-Instruct")
 
 # Create columns
-columns = nn.ModuleList([create_column(hidden_size=576) for _ in range(4)])
+columns = nn.ModuleList([create_column(hidden_size=960) for _ in range(4)])
+output_projection = nn.Linear(960, 49152)  # hidden_size, vocab_size
 
 # Initialize trainer
 trainer = ComprehensiveTraining(base_model, tokenizer, columns, output_projection)
 
-# Pretrain to create "fertile ground"
+# Pretrain using cached dataset
 trainer.pretrain_columns(
     column_indices=[0, 1, 2, 3],
     epochs=3,
-    batch_size=4
+    batch_size=4,
+    use_cache=True,  # Load from cache if available
+    cache_path='keko_datasets/pretraining_dataset.pkl'
 )
+
+# Or generate new dataset
+trainer.pretrain_columns(
+    column_indices=[0, 1, 2, 3],
+    epochs=3,
+    batch_size=4,
+    dataset_size=5000,
+    use_cache=False  # Force regeneration
+)
+```
+
+#### Training Output
+
+The training process provides detailed logging:
+- **Batch-level progress** every 50 batches (loss, avg, speed, ETA, GPU memory)
+- **Epoch summaries** with min/max/avg loss and improvement trends
+- **Quick column tests** after each epoch showing predicted tokens
+- **Final statistics** with total improvement percentages
+
+Example output:
+```
+[Batch   50/1185] Loss: 15.2341 | Avg: 16.8432 | 23.1 samp/s | ETA: 3.3m | GPU: 1.2GB
+✓ Epoch 1 Complete:
+  Loss: 14.2341 ↓ -18.3% (min: 12.4375, max: 22.1234)
+  Time: 3.3 min | Batches: 1185 | Samples: 4738
+
+Quick Test:
+  'Hello, how are you?' → Base: ' How' | Column 0: ' I' ✓ learning!
 ```
 
 ### Uncertainty-Driven Inference
@@ -365,6 +446,22 @@ uncertain_mask, prob_scores = model.detect_uncertainty(logits)
 print(f"Uncertain tokens: {uncertain_mask.sum().item()}")
 print(f"Avg uncertainty: {prob_scores[uncertain_mask].mean().item():.3f}")
 ```
+
+## 📦 Dataset Generation for Uncertainty Training
+
+`dataset_generator` captures prompt-response pairs from the frozen SmolLM base and enriches each example with per-token confidence/uncertainty metadata. It saves results in a HuggingFace-compatible folder (`datasets/keko_factset` by default) so your uncertainty curriculum can sample failures, ambiguous tokens, and high-entropy spans. Pass `--save-jsonl` to also emit a newline-delimited JSONL export alongside the dataset directory for easier integration with other tools.
+
+Generate a new fact-response corpus with:
+
+```bash
+python -m dataset_generator.cli \
+  --output-path datasets/keko_factset \
+  --max-tokens 64 \
+  --temperature 0.7 \
+  --num-workers 2
+```
+
+Provide `--prompts-file` for your own seed queries, `--num-samples` to limit the run, `--save-json` to dump JSON, `--save-jsonl` to emit newline-delimited JSONL, `--repetition-penalty` to discourage repeated phrases, and `--num-workers` to parallelize the base-model calls. The resulting dataset includes `prompt`, `response`, `token_confidences`, and aggregated uncertainty statistics, making it ready for downstream curriculum learning or logging.
 
 ## 📄 Current Limitations & Future Work
 
