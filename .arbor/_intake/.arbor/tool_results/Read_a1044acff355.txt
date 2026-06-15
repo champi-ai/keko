@@ -1,0 +1,1069 @@
+1	import torch
+2	import torch.nn as nn
+3	import torch.nn.functional as F
+4	import numpy as np
+5	from transformers import AutoTokenizer, AutoModelForCausalLM
+6	from collections import deque
+7	import time
+8	from dataclasses import dataclass
+9	from typing import List, Tuple, Optional
+10	
+11	
+12	@dataclass
+13	class UncertaintyEvent:
+14	    timestamp: float
+15	    input_pattern: torch.Tensor
+16	    uncertainty_mask: torch.Tensor
+17	    column_response: int
+18	    resolved: bool
+19	
+20	
+21	@dataclass
+22	class ClarificationRecord:
+23	    """Record of a clarification interaction"""
+24	    timestamp: float
+25	    original_input: str
+26	    clarifying_question: str
+27	    clarified_response: Optional[str]
+28	    uncertainty_before: float
+29	    uncertainty_after: Optional[float]
+30	    clarification_gain: Optional[float]  # ΔU = U_before - U_after
+31	    mode: str  # 'interactive' or 'autonomous'
+32	
+33	
+34	class MetricsTracker:
+35	    """Comprehensive metrics tracking for uncertainty-driven learning"""
+36	
+37	    def __init__(self):
+38	        # Token-level uncertainty tracking
+39	        self.token_uncertainties = deque(maxlen=10000)  # Store individual token uncertainties
+40	        self.uncertainty_timestamps = deque(maxlen=10000)  # Timestamps for temporal analysis
+41	
+42	        # Uncertainty resolution tracking
+43	        self.uncertainty_events = deque(maxlen=1000)  # Events with resolution status
+44	        self.resolved_count = 0
+45	        self.total_uncertain_events = 0
+46	
+47	        # Temporal stability tracking
+48	        self.epoch_uncertainties = deque(maxlen=100)  # Average uncertainty per epoch/cycle
+49	        self.uncertainty_drift_history = deque(maxlen=50)  # TSM values over time
+50	
+51	        # Performance metrics
+52	        self.inference_times = deque(maxlen=500)
+53	        self.generation_lengths = deque(maxlen=500)
+54	
+55	        # Column performance
+56	        self.column_activation_counts = [0, 0, 0, 0]
+57	        self.column_success_rates = [0.0, 0.0, 0.0, 0.0]
+58	
+59	    def record_token_uncertainty(self, uncertainty: float, timestamp: float = None):
+60	        """Record per-token uncertainty"""
+61	        if timestamp is None:
+62	            timestamp = time.time()
+63	
+64	        self.token_uncertainties.append(uncertainty)
+65	        self.uncertainty_timestamps.append(timestamp)
+66	
+67	    def record_uncertain_event(self, resolved: bool):
+68	        """Record an uncertainty event and whether it was resolved"""
+69	        self.total_uncertain_events += 1
+70	        if resolved:
+71	            self.resolved_count += 1
+72	
+73	        self.uncertainty_events.append({
+74	            'timestamp': time.time(),
+75	            'resolved': resolved
+76	        })
+77	
+78	    def calculate_aut(self) -> float:
+79	        """Calculate Average Uncertainty per Token (AUT)"""
+80	        if not self.token_uncertainties:
+81	            return 0.0
+82	
+83	        return sum(self.token_uncertainties) / len(self.token_uncertainties)
+84	
+85	    def calculate_urr(self) -> float:
+86	        """Calculate Uncertainty Resolution Rate (URR)"""
+87	        if self.total_uncertain_events == 0:
+88	            return 0.0
+89	
+90	        return self.resolved_count / self.total_uncertain_events
+91	
+92	    def record_epoch_uncertainty(self):
+93	        """Record average uncertainty for current epoch/cycle"""
+94	        if not self.token_uncertainties:
+95	            return
+96	
+97	        # Get recent uncertainties (last 100 tokens)
+98	        recent = list(self.token_uncertainties)[-100:]
+99	        avg_uncertainty = sum(recent) / len(recent)
+100	
+101	        self.epoch_uncertainties.append(avg_uncertainty)
+102	
+103	        # Calculate TSM (Temporal Stability Metric) if we have history
+104	        if len(self.epoch_uncertainties) >= 2:
+105	            self._calculate_tsm()
+106	
+107	    def _calculate_tsm(self):
+108	        """Calculate Temporal Stability Metric - measures confidence drift"""
+109	        if len(self.epoch_uncertainties) < 2:
+110	            return 0.0
+111	
+112	        # TSM = average absolute difference between consecutive epochs
+113	        epochs = list(self.epoch_uncertainties)
+114	        diffs = [abs(epochs[i] - epochs[i-1]) for i in range(1, len(epochs))]
+115	
+116	        tsm = sum(diffs) / len(diffs)
+117	        self.uncertainty_drift_history.append(tsm)
+118	
+119	        return tsm
+120	
+121	    def get_tsm(self) -> float:
+122	        """Get latest Temporal Stability Metric"""
+123	        if not self.uncertainty_drift_history:
+124	            return 0.0
+125	
+126	        return self.uncertainty_drift_history[-1]
+127	
+128	    def record_column_activation(self, col_idx: int, success: bool):
+129	        """Track column usage and success"""
+130	        self.column_activation_counts[col_idx] += 1
+131	
+132	        # Update success rate with exponential moving average
+133	        alpha = 0.1  # Smoothing factor
+134	        current_rate = self.column_success_rates[col_idx]
+135	        self.column_success_rates[col_idx] = (
+136	            alpha * (1.0 if success else 0.0) +
+137	            (1 - alpha) * current_rate
+138	        )
+139	
+140	    def get_comprehensive_metrics(self) -> dict:
+141	        """Get all metrics in one snapshot"""
+142	        return {
+143	            # Core uncertainty metrics
+144	            'aut': self.calculate_aut(),
+145	            'urr': self.calculate_urr(),
+146	            'tsm': self.get_tsm(),
+147	
+148	            # Resolution statistics
+149	            'total_uncertain_events': self.total_uncertain_events,
+150	            'resolved_events': self.resolved_count,
+151	            'unresolved_events': self.total_uncertain_events - self.resolved_count,
+152	
+153	            # Token statistics
+154	            'total_tokens_tracked': len(self.token_uncertainties),
+155	            'recent_avg_uncertainty': (
+156	                sum(list(self.token_uncertainties)[-100:]) / min(100, len(self.token_uncertainties))
+157	                if self.token_uncertainties else 0.0
+158	            ),
+159	
+160	            # Temporal analysis
+161	            'epochs_recorded': len(self.epoch_uncertainties),
+162	            'uncertainty_trend': self._get_uncertainty_trend(),
+163	            'stability_trend': self._get_stability_trend(),
+164	
+165	            # Column performance
+166	            'column_activations': self.column_activation_counts,
+167	            'column_success_rates': self.column_success_rates
+168	        }
+169	
+170	    def _get_uncertainty_trend(self) -> str:
+171	        """Determine if uncertainty is increasing, decreasing, or stable"""
+172	        if len(self.epoch_uncertainties) < 5:
+173	            return "insufficient_data"
+174	
+175	        recent = list(self.epoch_uncertainties)[-5:]
+176	        first_half_avg = sum(recent[:3]) / 3
+177	        second_half_avg = sum(recent[3:]) / 2
+178	
+179	        diff = second_half_avg - first_half_avg
+180	
+181	        if abs(diff) < 0.05:
+182	            return "stable"
+183	        elif diff > 0:
+184	            return "increasing"
+185	        else:
+186	            return "decreasing"
+187	
+188	    def _get_stability_trend(self) -> str:
+189	        """Determine if model is becoming more or less stable"""
+190	        if len(self.uncertainty_drift_history) < 5:
+191	            return "insufficient_data"
+192	
+193	        recent_drift = list(self.uncertainty_drift_history)[-5:]
+194	        first_half_avg = sum(recent_drift[:3]) / 3
+195	        second_half_avg = sum(recent_drift[3:]) / 2
+196	
+197	        if abs(first_half_avg - second_half_avg) < 0.01:
+198	            return "stable"
+199	        elif second_half_avg < first_half_avg:
+200	            return "stabilizing"  # Drift decreasing = more stable
+201	        else:
+202	            return "destabilizing"  # Drift increasing = less stable
+203	
+204	    def print_metrics_summary(self):
+205	        """Print human-readable metrics summary"""
+206	        metrics = self.get_comprehensive_metrics()
+207	
+208	        print("\n" + "="*60)
+209	        print("📊 UNCERTAINTY METRICS SUMMARY")
+210	        print("="*60)
+211	
+212	        print(f"\n🎯 Core Metrics:")
+213	        print(f"  AUT (Avg Uncertainty/Token): {metrics['aut']:.4f}")
+214	        print(f"  URR (Resolution Rate):        {metrics['urr']:.2%}")
+215	        print(f"  TSM (Temporal Stability):     {metrics['tsm']:.4f}")
+216	
+217	        print(f"\n📈 Resolution Statistics:")
+218	        print(f"  Total Uncertain Events: {metrics['total_uncertain_events']}")
+219	        print(f"  Resolved:               {metrics['resolved_events']} ✓")
+220	        print(f"  Unresolved:             {metrics['unresolved_events']}")
+221	
+222	        print(f"\n📊 Trends:")
+223	        print(f"  Uncertainty Trend: {metrics['uncertainty_trend']}")
+224	        print(f"  Stability Trend:   {metrics['stability_trend']}")
+225	
+226	        print(f"\n🔧 Column Performance:")
+227	        for i, (count, rate) in enumerate(zip(metrics['column_activations'], metrics['column_success_rates'])):
+228	            print(f"  Column {i}: {count:4d} activations, {rate:.1%} success rate")
+229	
+230	        print("="*60 + "\n")
+231	
+232	
+233	class ClarificationEngine:
+234	    """Handles uncertainty resolution through clarification"""
+235	
+236	    def __init__(self, tokenizer, base_model):
+237	        self.tokenizer = tokenizer
+238	        self.base_model = base_model
+239	
+240	        # Clarification buffer - stores clarification history
+241	        self.clarification_buffer = deque(maxlen=1000)
+242	
+243	        # Dynamic threshold for triggering clarifications
+244	        self.base_threshold = 0.6  # Base uncertainty threshold
+245	        self.adaptive_threshold = 0.6
+246	        self.threshold_momentum = 0.95  # For exponential moving average
+247	
+248	        # Recent uncertainty statistics for adaptive thresholding
+249	        self.recent_uncertainties = deque(maxlen=100)
+250	
+251	        # Clarification templates
+252	        self.clarification_templates = [
+253	            "I'm not entirely certain about {topic}. Could you clarify what you mean?",
+254	            "I have some uncertainty regarding {topic}. Can you provide more context?",
+255	            "To better understand {topic}, could you elaborate on that?",
+256	            "I need more information about {topic} to give you a confident answer.",
+257	            "There are multiple interpretations of {topic}. Which aspect interests you most?",
+258	        ]
+259	
+260	    def dynamic_threshold(self):
+261	        """Calculate adaptive threshold based on recent uncertainty patterns"""
+262	        if len(self.recent_uncertainties) < 10:
+263	            return self.base_threshold
+264	
+265	        # Update threshold based on recent history
+266	        mean_uncertainty = sum(self.recent_uncertainties) / len(self.recent_uncertainties)
+267	        std_uncertainty = (
+268	            sum((u - mean_uncertainty) ** 2 for u in self.recent_uncertainties) / len(self.recent_uncertainties)
+269	        ) ** 0.5
+270	
+271	        # Threshold = mean + 0.5 * std (captures elevated uncertainty)
+272	        new_threshold = mean_uncertainty + 0.5 * std_uncertainty
+273	
+274	        # Smooth with exponential moving average
+275	        self.adaptive_threshold = (
+276	            self.threshold_momentum * self.adaptive_threshold +
+277	            (1 - self.threshold_momentum) * new_threshold
+278	        )
+279	
+280	        # Clamp between reasonable bounds
+281	        return max(0.4, min(0.8, self.adaptive_threshold))
+282	
+283	    def should_request_clarification(self, uncertainty_score: float, mode: str = 'interactive') -> bool:
+284	        """Determine if clarification should be requested"""
+285	        # Track uncertainty for adaptive threshold
+286	        self.recent_uncertainties.append(uncertainty_score)
+287	
+288	        threshold = self.dynamic_threshold()
+289	
+290	        # In interactive mode, lower threshold (more willing to ask)
+291	        if mode == 'interactive':
+292	            threshold *= 0.9
+293	
+294	        return uncertainty_score > threshold
+295	
+296	    def generate_clarification_question(self, input_text: str, uncertainty_score: float) -> str:
+297	        """Generate a clarifying question based on input and uncertainty"""
+298	        # Extract potential topic (simple heuristic: last noun phrase or keywords)
+299	        words = input_text.split()
+300	
+301	        # Find key content words (simple approach)
+302	        topic = "this"
+303	        if len(words) > 3:
+304	            # Take last few words as topic
+305	            topic = " ".join(words[-3:])
+306	        elif words:
+307	            topic = " ".join(words)
+308	
+309	        # Select template based on uncertainty level
+310	        if uncertainty_score > 0.8:
+311	            template_idx = 0  # Most uncertain
+312	        elif uncertainty_score > 0.7:
+313	            template_idx = 1
+314	        else:
+315	            template_idx = 2
+316	
+317	        template = self.clarification_templates[template_idx % len(self.clarification_templates)]
+318	
+319	        return template.format(topic=topic)
+320	
+321	    def request_clarification(
+322	        self,
+323	        input_text: str,
+324	        uncertainty_score: float,
+325	        mode: str = 'interactive'
+326	    ) -> Optional[str]:
+327	        """Main entry point: request clarification if needed"""
+328	
+329	        if not self.should_request_clarification(uncertainty_score, mode):
+330	            return None
+331	
+332	        question = self.generate_clarification_question(input_text, uncertainty_score)
+333	
+334	        # Record the clarification request
+335	        record = ClarificationRecord(
+336	            timestamp=time.time(),
+337	            original_input=input_text,
+338	            clarifying_question=question,
+339	            clarified_response=None,
+340	            uncertainty_before=uncertainty_score,
+341	            uncertainty_after=None,
+342	            clarification_gain=None,
+343	            mode=mode
+344	        )
+345	
+346	        self.clarification_buffer.append(record)
+347	
+348	        return question
+349	
+350	    def record_clarification_result(
+351	        self,
+352	        original_input: str,
+353	        clarified_response: str,
+354	        uncertainty_after: float
+355	    ):
+356	        """Update clarification record with results and calculate gain"""
+357	        # Find the most recent matching clarification request
+358	        for record in reversed(self.clarification_buffer):
+359	            if record.original_input == original_input and record.uncertainty_after is None:
+360	                record.clarified_response = clarified_response
+361	                record.uncertainty_after = uncertainty_after
+362	                record.clarification_gain = record.uncertainty_before - uncertainty_after
+363	                break
+364	
+365	    def get_clarification_efficiency(self) -> float:
+366	        """Calculate average clarification gain (ΔU) across recent clarifications"""
+367	        gains = [
+368	            r.clarification_gain
+369	            for r in self.clarification_buffer
+370	            if r.clarification_gain is not None
+371	        ]
+372	
+373	        if not gains:
+374	            return 0.0
+375	
+376	        return sum(gains) / len(gains)
+377	
+378	    def get_clarification_stats(self) -> dict:
+379	        """Get statistics about clarification effectiveness"""
+380	        total_clarifications = len(self.clarification_buffer)
+381	        completed = sum(1 for r in self.clarification_buffer if r.clarified_response is not None)
+382	        successful = sum(1 for r in self.clarification_buffer if r.clarification_gain and r.clarification_gain > 0.1)
+383	
+384	        return {
+385	            'total_requests': total_clarifications,
+386	            'completed': completed,
+387	            'successful_resolutions': successful,
+388	            'avg_clarification_gain': self.get_clarification_efficiency(),
+389	            'success_rate': successful / completed if completed > 0 else 0.0,
+390	            'adaptive_threshold': self.adaptive_threshold
+391	        }
+392	
+393	
+394	class UncertaintyPNN:
+395	    def __init__(self, base_model_name="HuggingFaceTB/SmolLM-360M-Instruct"):
+396	        print("Initializing Uncertainty-Driven PNN...")
+397	
+398	        # Base model - frozen core
+399	        self.tokenizer = AutoTokenizer.from_pretrained(base_model_name)
+400	        self.tokenizer.pad_token = self.tokenizer.eos_token
+401	        self.base = AutoModelForCausalLM.from_pretrained(base_model_name)
+402	
+403	        # Freeze base - it's the permanent core
+404	        for p in self.base.parameters():
+405	            p.requires_grad = False
+406	
+407	        self.hidden_size = self.base.config.hidden_size
+408	        self.vocab_size = self.base.config.vocab_size
+409	
+410	        # 4 columns for specialization
+411	        self.columns = nn.ModuleList([
+412	            self._create_column() for _ in range(4)
+413	        ])
+414	
+415	        # Column states: inactive -> active -> frozen -> homogeneous
+416	        self.column_states = ['active'] * 4
+417	        self.column_scores = [0.0] * 4  # Track complementarity
+418	
+419	        # Uncertainty thresholds (x < p < y)
+420	        self.uncertainty_lower = 0.3
+421	        self.uncertainty_upper = 0.7
+422	
+423	        # Token hunger state
+424	        self.satisfaction_threshold = 0.8
+425	        self.current_satisfaction = 0.0
+426	        self.token_buffer = deque(maxlen=1000)
+427	
+428	        # Background training queue
+429	        self.training_queue = deque(maxlen=10000)
+430	        self.uncertainty_history = deque(maxlen=1000)
+431	
+432	        # Generation uncertainty tracking
+433	        self.generation_uncertainty = deque(maxlen=500)  # Track last 500 generations
+434	
+435	        # Clarification engine
+436	        self.clarification_engine = ClarificationEngine(self.tokenizer, self.base)
+437	
+438	        # Metrics tracking
+439	        self.metrics = MetricsTracker()
+440	
+441	        # Frozen column indices (part of extended core)
+442	        self.frozen_columns = []
+443	
+444	        # Output projection for columns
+445	        self.output_projection = nn.Linear(self.hidden_size, self.vocab_size)
+446	
+447	        # Move to GPU if available
+448	        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+449	        self.base = self.base.to(self.device)
+450	        self.columns = self.columns.to(self.device)
+451	        self.output_projection = self.output_projection.to(self.device)
+452	
+453	    def _create_column(self):
+454	        """Create a single column with 3 layers"""
+455	        return nn.Sequential(
+456	            nn.Linear(self.hidden_size, self.hidden_size),
+457	            nn.GELU(),
+458	            nn.LayerNorm(self.hidden_size),
+459	            nn.Dropout(0.1),
+460	            nn.Linear(self.hidden_size, self.hidden_size),
+461	            nn.GELU(),
+462	            nn.LayerNorm(self.hidden_size),
+463	            nn.Dropout(0.1),
+464	            nn.Linear(self.hidden_size, self.hidden_size),
+465	            nn.LayerNorm(self.hidden_size)
+466	        )
+467	
+468	    def detect_uncertainty(self, logits):
+469	        """Identify tokens with uncertainty (between thresholds)"""
+470	        probs = F.softmax(logits, dim=-1)
+471	        max_probs = probs.max(dim=-1).values
+472	
+473	        uncertain = (max_probs > self.uncertainty_lower) & \
+474	                    (max_probs < self.uncertainty_upper)
+475	
+476	        return uncertain, max_probs
+477	
+478	    def pretrain_fertile_ground(self, iterations=500):
+479	        """Base teaches columns its representational space"""
+480	        print("Creating fertile ground in columns...")
+481	
+482	        for col_idx in range(4):
+483	            if self.column_states[col_idx] != 'active':
+484	                continue
+485	
+486	            optimizer = torch.optim.AdamW(
+487	                self.columns[col_idx].parameters(),
+488	                lr=1e-4
+489	            )
+490	
+491	            for i in range(iterations):
+492	                # Variable length sequences
+493	                seq_len = torch.randint(10, 100, (1,)).item()
+494	                input_ids = torch.randint(
+495	                    0, self.vocab_size,
+496	                    (1, seq_len)
+497	                ).to(self.device)
+498	
+499	                with torch.no_grad():
+500	                    base_out = self.base(input_ids, output_hidden_states=True)
+501	                    base_hidden = base_out.hidden_states[-1]
+502	
+503	                # Column learns base's space with slight flexibility
+504	                column_out = self.columns[col_idx](base_hidden)
+505	
+506	                # Target is base + small noise for flexibility
+507	                target = base_hidden + torch.randn_like(base_hidden) * 0.01
+508	
+509	                loss = F.mse_loss(column_out, target)
+510	
+511	                # Regularization to keep columns receptive
+512	                loss += 0.001 * column_out.abs().mean()
+513	
+514	                optimizer.zero_grad()
+515	                loss.backward()
+516	                optimizer.step()
+517	
+518	                if i % 100 == 0:
+519	                    print(f"Column {col_idx}: iteration {i}, loss: {loss.item():.4f}")
+520	
+521	        print("Fertile ground prepared - columns ready for specialization")
+522	
+523	    def check_token_hunger(self, input_text):
+524	        """Determine if system needs more tokens before responding with enhanced heuristics"""
+525	        self.token_buffer.append(input_text)
+526	
+527	        # Get recent context
+528	        recent_tokens = list(self.token_buffer)[-10:]
+529	        combined = " ".join(recent_tokens)
+530	
+531	        # Multi-factor satisfaction assessment
+532	        satisfaction_factors = []
+533	
+534	        # Factor 1: Buffer fullness (need minimum context)
+535	        if len(recent_tokens) < 3:
+536	            satisfaction_factors.append(0.2)
+537	        else:
+538	            satisfaction_factors.append(0.8)
+539	
+540	        # Factor 2: Token count (prefer substantial inputs)
+541	        token_count = len(input_text.split())
+542	        if token_count < 5:
+543	            satisfaction_factors.append(0.3)
+544	        elif token_count < 15:
+545	            satisfaction_factors.append(0.6)
+546	        else:
+547	            satisfaction_factors.append(1.0)
+548	
+549	        # Factor 3: Semantic completeness markers
+550	        question_marks = combined.count("?")
+551	        periods = combined.count(".")
+552	        if question_marks > periods:
+553	            # More questions than statements - might need clarification
+554	            satisfaction_factors.append(0.5)
+555	        elif periods == 0 and len(combined) > 20:
+556	            # Long input with no clear end - might be incomplete
+557	            satisfaction_factors.append(0.6)
+558	        else:
+559	            satisfaction_factors.append(0.9)
+560	
+561	        # Factor 4: Information density (check for vague/incomplete inputs)
+562	        vague_indicators = ['um', 'uh', 'well', 'maybe', 'sort of', 'kind of', '...']
+563	        vague_count = sum(1 for indicator in vague_indicators if indicator in input_text.lower())
+564	        if vague_count > 2:
+565	            satisfaction_factors.append(0.4)
+566	        else:
+567	            satisfaction_factors.append(0.8)
+568	
+569	        # Factor 5: Referential completeness (avoid pronouns without context)
+570	        pronouns = ['it', 'this', 'that', 'these', 'those', 'they', 'them']
+571	        first_words = input_text.lower().split()[:3]
+572	        if any(pronoun in first_words for pronoun in pronouns) and len(recent_tokens) < 2:
+573	            # Pronoun reference without sufficient context
+574	            satisfaction_factors.append(0.3)
+575	        else:
+576	            satisfaction_factors.append(0.9)
+577	
+578	        # Calculate weighted average satisfaction
+579	        self.current_satisfaction = sum(satisfaction_factors) / len(satisfaction_factors)
+580	
+581	        # Hungry if satisfaction is below threshold
+582	        return self.current_satisfaction < self.satisfaction_threshold
+583	
+584	    def generate_inquiry(self, uncertainty_type, input_text=None):
+585	        """Generate contextual questions to resolve uncertainty"""
+586	        if input_text:
+587	            # Analyze input to generate contextual inquiry
+588	            token_count = len(input_text.split())
+589	
+590	            if token_count < 5:
+591	                return "Could you provide more details? I need more context to understand your request."
+592	            elif input_text.lower().startswith(('it', 'this', 'that', 'these', 'those')):
+593	                return "What are you referring to? I need more context about what you're asking about."
+594	            elif '?' not in input_text and '.' not in input_text:
+595	                return "I notice your message seems incomplete. Could you finish your thought?"
+596	            else:
+597	                return "Could you elaborate on that? I want to make sure I understand correctly."
+598	
+599	        # Fallback to type-based inquiries
+600	        if uncertainty_type == 'high':
+601	            return "I need more context about this. Can you elaborate?"
+602	        elif uncertainty_type == 'mixed':
+603	            return "This touches multiple areas. Which aspect should I focus on?"
+604	        else:
+605	            return "Tell me more so I can understand better."
+606	
+607	    def process_clarified_input(self, original_input: str, clarified_input: str):
+608	        """Process user's clarified response and track improvement"""
+609	        # Run inference on clarified input
+610	        result = self.live_inference(clarified_input)
+611	
+612	        # Record the clarification result with uncertainty after
+613	        if 'uncertainty_score' in result:
+614	            self.clarification_engine.record_clarification_result(
+615	                original_input=original_input,
+616	                clarified_response=clarified_input,
+617	                uncertainty_after=result['uncertainty_score']
+618	            )
+619	
+620	        return result
+621	
+622	    def live_inference(self, user_input, is_clarified=False):
+623	        """Main inference with uncertainty-driven learning
+624	
+625	        Args:
+626	            user_input: The input text to process
+627	            is_clarified: If True, skip clarification (this is already a clarified input)
+628	        """
+629	
+630	        # Check token hunger (unless this is a clarified response)
+631	        if not is_clarified and self.check_token_hunger(user_input):
+632	            if self.current_satisfaction < self.satisfaction_threshold:
+633	                return {
+634	                    'mode': 'hungry',
+635	                    'response': self.generate_inquiry('high', user_input),
+636	                    'satisfaction': self.current_satisfaction
+637	                }
+638	
+639	        # Tokenize input
+640	        inputs = self.tokenizer(
+641	            user_input,
+642	            return_tensors='pt',
+643	            truncation=True,
+644	            max_length=512
+645	        ).to(self.device)
+646	
+647	        # Base model forward
+648	        with torch.no_grad():
+649	            base_out = self.base(**inputs, output_hidden_states=True)
+650	            base_hidden = base_out.hidden_states[-1]
+651	            base_logits = base_out.logits
+652	
+653	        # Detect uncertainty
+654	        uncertain_mask, prob_scores = self.detect_uncertainty(base_logits)
+655	
+656	        # Calculate average uncertainty score for this input
+657	        avg_uncertainty = (1.0 - prob_scores.mean().item())
+658	
+659	        if uncertain_mask.any():
+660	            # Record uncertain event (will update resolution status later)
+661	            self.metrics.record_uncertain_event(resolved=False)  # Assume unresolved initially
+662	
+663	            # Check if we should request clarification (only if not already clarified)
+664	            if not is_clarified:
+665	                clarification_question = self.clarification_engine.request_clarification(
+666	                    user_input,
+667	                    avg_uncertainty,
+668	                    mode='interactive'
+669	                )
+670	
+671	                if clarification_question:
+672	                    return {
+673	                        'mode': 'clarifying',
+674	                        'response': clarification_question,
+675	                        'uncertainty_score': avg_uncertainty,
+676	                        'requires_clarification': True,
+677	                        'satisfaction': self.current_satisfaction
+678	                    }
+679	
+680	            # Route through columns (high uncertainty but no clarification needed)
+681	            column_out = self.route_through_columns(
+682	                base_hidden,
+683	                uncertain_mask
+684	            )
+685	
+686	            # Learn from this uncertainty
+687	            self.queue_uncertainty_pattern(
+688	                inputs.input_ids,
+689	                uncertain_mask,
+690	                column_out
+691	            )
+692	
+693	            # Generate using column-enhanced representation
+694	            response = self.generate_from_hidden(column_out)
+695	
+696	            # Check if uncertainty was reduced after column processing (simple heuristic)
+697	            # In a full implementation, we'd re-evaluate uncertainty after generation
+698	            if is_clarified:
+699	                # If this was a clarified input, mark previous event as resolved
+700	                self.metrics.resolved_count += 1
+701	        else:
+702	            # Use base model for confident regions
+703	            response = self.generate_from_hidden(base_hidden)
+704	
+705	        return {
+706	            'mode': 'responding',
+707	            'response': response,
+708	            'uncertainty_detected': uncertain_mask.any().item(),
+709	            'uncertainty_score': avg_uncertainty,
+710	            'satisfaction': self.current_satisfaction
+711	        }
+712	
+713	    def route_through_columns(self, hidden_states, uncertainty_mask):
+714	        """Route uncertain patterns through appropriate columns"""
+715	
+716	        # Find active columns
+717	        active_cols = [
+718	            i for i, state in enumerate(self.column_states)
+719	            if state == 'active'
+720	        ]
+721	
+722	        if not active_cols:
+723	            return hidden_states
+724	
+725	        # For now, use first active column
+726	        col_idx = active_cols[0]
+727	        column_out = self.columns[col_idx](hidden_states)
+728	
+729	        # Track this resolution attempt
+730	        self.track_complementarity(col_idx, uncertainty_mask)
+731	
+732	        # Combine with frozen columns if any
+733	        if self.frozen_columns:
+734	            frozen_outputs = []
+735	            for frozen_idx in self.frozen_columns:
+736	                frozen_out = self.columns[frozen_idx](hidden_states)
+737	                frozen_outputs.append(frozen_out)
+738	
+739	            # Average frozen column contributions
+740	            frozen_combined = torch.stack(frozen_outputs).mean(dim=0)
+741	            column_out = column_out + 0.3 * frozen_combined
+742	
+743	        return column_out
+744	
+745	    def track_complementarity(self, col_idx, uncertainty_resolved):
+746	        """Track if column deserves freezing"""
+747	
+748	        # Count successful uncertainty resolutions
+749	        if uncertainty_resolved.sum() > 0:
+750	            self.column_scores[col_idx] += uncertainty_resolved.float().mean().item()
+751	
+752	        # Check for freezing threshold
+753	        if self.column_scores[col_idx] > 50:  # Proven complementary
+754	            self.freeze_column(col_idx)
+755	
+756	    def freeze_column(self, col_idx):
+757	        """Freeze column as part of extended core"""
+758	        if self.column_states[col_idx] != 'frozen':
+759	            print(f"Freezing column {col_idx} - proven complementary to base")
+760	
+761	            self.column_states[col_idx] = 'frozen'
+762	            self.frozen_columns.append(col_idx)
+763	
+764	            # Freeze its parameters
+765	            for param in self.columns[col_idx].parameters():
+766	                param.requires_grad = False
+767	
+768	            # Check if we need to activate new columns
+769	            if len(self.frozen_columns) >= 2:
+770	                self.activate_next_wave()
+771	
+772	    def activate_next_wave(self):
+773	        """Activate inactive columns when enough are frozen"""
+774	        inactive = [
+775	            i for i, state in enumerate(self.column_states)
+776	            if state == 'inactive'
+777	        ]
+778	
+779	        if inactive:
+780	            # For POC, just activate all inactive
+781	            for idx in inactive[:4]:
+782	                self.column_states[idx] = 'active'
+783	                print(f"Activating column {idx} for new specialization")
+784	
+785	    def check_homogeneity(self):
+786	        """Check if frozen columns have become redundant"""
+787	        if len(self.frozen_columns) < 2:
+788	            return
+789	
+790	        # Compare frozen column outputs on recent patterns
+791	        recent_patterns = list(self.uncertainty_history)[-10:]
+792	        if not recent_patterns:
+793	            return
+794	
+795	        similarities = []
+796	        for pattern in recent_patterns:
+797	            outputs = []
+798	            for col_idx in self.frozen_columns:
+799	                with torch.no_grad():
+800	                    out = self.columns[col_idx](pattern.input_pattern)
+801	                    outputs.append(out)
+802	
+803	            # Check similarity between frozen columns
+804	            if len(outputs) > 1:
+805	                sim = F.cosine_similarity(outputs[0], outputs[1], dim=-1).mean()
+806	                similarities.append(sim.item())
+807	
+808	        # If too similar, unfreeze one
+809	        if similarities and np.mean(similarities) > 0.95:
+810	            unfroze_idx = self.frozen_columns.pop()
+811	            self.column_states[unfroze_idx] = 'active'
+812	            for param in self.columns[unfroze_idx].parameters():
+813	                param.requires_grad = True
+814	            print(f"Unfreezing column {unfroze_idx} due to homogeneity")
+815	
+816	    def queue_uncertainty_pattern(self, input_ids, mask, response):
+817	        """Queue patterns for background training"""
+818	        event = UncertaintyEvent(
+819	            timestamp=time.time(),
+820	            input_pattern=input_ids,
+821	            uncertainty_mask=mask,
+822	            column_response=0,  # Track which column handled it
+823	            resolved=False
+824	        )
+825	        self.uncertainty_history.append(event)
+826	        self.training_queue.append(event)
+827	
+828	    def background_training(self, iterations=10):
+829	        """Process training queue during idle time"""
+830	        if len(self.training_queue) < 10:
+831	            return
+832	
+833	        print(f"Background training with {len(self.training_queue)} patterns...")
+834	
+835	        # Train active columns on queued patterns
+836	        for col_idx, state in enumerate(self.column_states):
+837	            if state != 'active':
+838	                continue
+839	
+840	            optimizer = torch.optim.AdamW(
+841	                self.columns[col_idx].parameters(),
+842	                lr=1e-5
+843	            )
+844	
+845	            for _ in range(min(iterations, len(self.training_queue))):
+846	                event = self.training_queue.popleft()
+847	
+848	                with torch.no_grad():
+849	                    base_out = self.base(
+850	                        event.input_pattern,
+851	                        output_hidden_states=True
+852	                    )
+853	                    base_hidden = base_out.hidden_states[-1]
+854	
+855	                column_out = self.columns[col_idx](base_hidden)
+856	
+857	                # Learn to be different where uncertain
+858	                uncertainty_weight = event.uncertainty_mask.float().unsqueeze(-1)
+859	                loss = -torch.log(torch.sigmoid(
+860	                    (column_out - base_hidden).abs() * uncertainty_weight
+861	                )).mean()
+862	
+863	                optimizer.zero_grad()
+864	                loss.backward()
+865	                optimizer.step()
+866	
+867	    def generate_from_hidden(self, hidden_states, max_new_tokens=50, temperature=0.7, top_k=50):
+868	        """Generate text autoregressively from hidden states with uncertainty tracking"""
+869	        # Get initial logits from last hidden state
+870	        current_hidden = hidden_states[:, -1:, :]  # Keep batch and sequence dims
+871	
+872	        generated_tokens = []
+873	        uncertainty_per_token = []
+874	
+875	        for step in range(max_new_tokens):
+876	            # Project to vocabulary
+877	            logits = self.output_projection(current_hidden.squeeze(1))
+878	
+879	            # Apply temperature
+880	            logits = logits / temperature
+881	
+882	            # Top-k filtering
+883	            if top_k > 0:
+884	                indices_to_remove = logits < torch.topk(logits, top_k)[0][..., -1, None]
+885	                logits[indices_to_remove] = float('-inf')
+886	
+887	            # Sample next token
+888	            probs = F.softmax(logits, dim=-1)
+889	            next_token = torch.multinomial(probs.squeeze(), 1)
+890	
+891	            # Track uncertainty for this token
+892	            max_prob = probs.max().item()
+893	            uncertainty = 1.0 - max_prob
+894	            uncertainty_per_token.append(uncertainty)
+895	
+896	            # Record in metrics tracker
+897	            self.metrics.record_token_uncertainty(uncertainty)
+898	
+899	            # Check stopping conditions
+900	            if next_token.item() == self.tokenizer.eos_token_id:
+901	                break
+902	
+903	            # Decode to check for natural stopping
+904	            decoded = self.tokenizer.decode(next_token)
+905	            if decoded in ['.', '!', '?', '\n'] and len(generated_tokens) > 10:
+906	                generated_tokens.append(next_token.item())
+907	                break
+908	
+909	            generated_tokens.append(next_token.item())
+910	
+911	            # Get next hidden state by running through base model
+912	            # For efficiency, we could cache past key-values in future
+913	            with torch.no_grad():
+914	                try:
+915	                    # Try to get embeddings for next token
+916	                    token_embed = self.base.get_input_embeddings()(next_token.unsqueeze(0))
+917	
+918	                    # Get next hidden state (simplified - full implementation would use past_key_values)
+919	                    next_hidden_output = self.base(
+920	                        inputs_embeds=token_embed,
+921	                        output_hidden_states=True,
+922	                        use_cache=False
+923	                    )
+924	                    current_hidden = next_hidden_output.hidden_states[-1]
+925	
+926	                except Exception as e:
+927	                    # Fallback: reuse last hidden state (less accurate but more robust)
+928	                    print(f"Warning: Could not get next hidden state, reusing last: {e}")
+929	                    break
+930	
+931	        # Decode full sequence
+932	        response = self.tokenizer.decode(generated_tokens, skip_special_tokens=True)
+933	
+934	        # Calculate average uncertainty for generated sequence
+935	        avg_uncertainty = sum(uncertainty_per_token) / len(uncertainty_per_token) if uncertainty_per_token else 0.0
+936	
+937	        # Store uncertainty history for this generation
+938	        if hasattr(self, 'generation_uncertainty'):
+939	            self.generation_uncertainty.append({
+940	                'response': response,
+941	                'avg_uncertainty': avg_uncertainty,
+942	                'uncertainty_per_token': uncertainty_per_token,
+943	                'num_tokens': len(generated_tokens)
+944	            })
+945	
+946	        return response
+947	
+948	    def run_continuous(self, duration_seconds=60):
+949	        """24/7 operation simulation"""
+950	        print(f"Running continuous operation for {duration_seconds} seconds...")
+951	
+952	        start_time = time.time()
+953	        cycle = 0
+954	
+955	        while time.time() - start_time < duration_seconds:
+956	            cycle += 1
+957	
+958	            # Simulate user input (in reality, from STT or text)
+959	            test_inputs = [
+960	                "What is consciousness?",
+961	                "Tell me about uncertainty",
+962	                "How do neural networks learn?",
+963	                "What is your name?",
+964	                "Explain quantum computing"
+965	            ]
+966	
+967	            user_input = test_inputs[cycle % len(test_inputs)]
+968	
+969	            # Process input
+970	            result = self.live_inference(user_input)
+971	
+972	            # Every 10 cycles, run background training
+973	            if cycle % 10 == 0:
+974	                self.background_training()
+975	                self.check_homogeneity()
+976	
+977	                # Record epoch uncertainty for TSM calculation
+978	                self.metrics.record_epoch_uncertainty()
+979	
+980	            # Small delay to simulate realistic timing
+981	            time.sleep(0.5)
+982	
+983	            if cycle % 20 == 0:
+984	                self.print_status()
+985	
+986	    def print_status(self):
+987	        """Print comprehensive system status with metrics"""
+988	        print("\n" + "="*60)
+989	        print("🧠 KEKO UNCERTAINTY PNN STATUS")
+990	        print("="*60)
+991	
+992	        # Column status
+993	        print(f"\n📊 Column Status:")
+994	        print(f"  States:  {self.column_states}")
+995	        print(f"  Frozen:  {self.frozen_columns}")
+996	        print(f"  Scores:  {[f'{s:.2f}' for s in self.column_scores]}")
+997	
+998	        # System health
+999	        print(f"\n💚 System Health:")
+1000	        print(f"  Training Queue: {len(self.training_queue):4d} samples")
+1001	        print(f"  Token Satisfaction: {self.current_satisfaction:.2%}")
+1002	        print(f"  Token Buffer: {len(self.token_buffer):4d} recent inputs")
+1003	
+1004	        # Clarification statistics
+1005	        clarification_stats = self.clarification_engine.get_clarification_stats()
+1006	        print(f"\n💬 Clarification Engine:")
+1007	        print(f"  Total Requests:    {clarification_stats['total_requests']:4d}")
+1008	        print(f"  Completed:         {clarification_stats['completed']:4d}")
+1009	        print(f"  Successful:        {clarification_stats['successful_resolutions']:4d}")
+1010	        print(f"  Success Rate:      {clarification_stats['success_rate']:.1%}")
+1011	        print(f"  Avg Gain (ΔU):     {clarification_stats['avg_clarification_gain']:.4f}")
+1012	        print(f"  Current Threshold: {clarification_stats['adaptive_threshold']:.3f}")
+1013	
+1014	        # Core uncertainty metrics
+1015	        print(f"\n📈 Uncertainty Metrics:")
+1016	        print(f"  AUT (Avg Uncertainty): {self.metrics.calculate_aut():.4f}")
+1017	        print(f"  URR (Resolution Rate): {self.metrics.calculate_urr():.2%}")
+1018	        print(f"  TSM (Temporal Stability): {self.metrics.get_tsm():.4f}")
+1019	
+1020	        # Trends
+1021	        metrics = self.metrics.get_comprehensive_metrics()
+1022	        print(f"\n📉 Trends:")
+1023	        print(f"  Uncertainty:  {metrics['uncertainty_trend']}")
+1024	        print(f"  Stability:    {metrics['stability_trend']}")
+1025	
+1026	        print("="*60 + "\n")
+1027	
+1028	
+1029	def main():
+1030	    """Test the POC"""
+1031	    print("Initializing Uncertainty-Driven PNN...")
+1032	    model = UncertaintyPNN()
+1033	
+1034	    # Phase 1: Create fertile ground
+1035	    print("\nPhase 1: Pretraining columns...")
+1036	    model.pretrain_fertile_ground(iterations=100)
+1037	
+1038	    # Phase 2: Interactive testing
+1039	    print("\nPhase 2: Interactive inference...")
+1040	
+1041	    test_queries = [
+1042	        "My name is",
+1043	        "Consciousness emerges from",
+1044	        "What is SEPAS?",
+1045	        "Tell me about progressive neural networks",
+1046	        "How does uncertainty relate to knowledge?"
+1047	    ]
+1048	
+1049	    for query in test_queries:
+1050	        print(f"\nUser: {query}")
+1051	        result = model.live_inference(query)
+1052	        print(f"Mode: {result['mode']}")
+1053	        print(f"Response preview: {result['response'][:100]}...")
+1054	        print(f"Uncertainty detected: {result.get('uncertainty_detected', False)}")
+1055	
+1056	    # Phase 3: Background training
+1057	    print("\nPhase 3: Processing background queue...")
+1058	    model.background_training(iterations=20)
+1059	
+1060	    # Phase 4: Check system evolution
+1061	    model.print_status()
+1062	
+1063	    # Optional: Run continuous operation
+1064	    # print("\nPhase 4: Continuous operation test...")
+1065	    # model.run_continuous(duration_seconds=30)
+1066	
+1067	
+1068	if __name__ == "__main__":
+1069	    main()
