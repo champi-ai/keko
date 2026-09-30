@@ -266,7 +266,7 @@ saved and loaded (`NegativeSpace.save/load`).
 uv sync --extra topology                 # ripser is optional; everything else degrades gracefully
 uv run pytest negative_space/tests -q    # ~5 s, tiny random-weight model, no downloads
 
-# CPU smoke run (SmolLM-360M-Instruct, 120 items, k=3, 4 noise levels × 2 sites): ~10-15 min
+# CPU smoke run (SmolLM-360M-Instruct, 120 items, k=3, 4 noise levels × 2 sites): ~19 min measured on a laptop CPU
 uv run python -m negative_space.run --config negative_space/configs/smoke_cpu.yaml
 
 # Full bundled benchmark on CPU (~310 items, k=5, 2 noise draws)

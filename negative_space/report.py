@@ -44,8 +44,6 @@ def plot_all(res: dict, out: Path) -> list[str]:
         for lab, ys in cv.items():
             ax.plot(levels, ys, color=LABEL_COLORS[lab], lw=2, marker="o", ms=5,
                     label=f"{lab} (n={counts[lab]})")
-            ax.annotate(lab, (levels[-1], ys[-1]), xytext=(4, 0), textcoords="offset points",
-                        color=INK2, fontsize=8, va="center")
         ax.set_title(f"noise site: {site}", color=INK, fontsize=10, loc="left")
         ax.set_xlabel("relative noise scale σ (× activation RMS)")
         ax.set_ylabel("answer stability")
@@ -71,7 +69,7 @@ def plot_all(res: dict, out: Path) -> list[str]:
     ax.axvline(0.5, color=INK2, lw=0.8, ls="--")
     ax.set_yticks(range(len(rows)))
     ax.set_yticklabels([r["score"] for r in rows], fontsize=7)
-    ax.set_xlabel("AUROC for detecting errors (95% bootstrap CI)   blue = negative-space scores, grey = baselines")
+    ax.set_xlabel("AUROC for errors, 95% bootstrap CI (blue: negative space, grey: baseline)")
     ax.set_xlim(0, 1.08)
     fig.tight_layout()
     p = out / "auroc_error_detection.png"
