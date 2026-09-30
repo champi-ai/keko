@@ -1,0 +1,31 @@
+# Smoke run: validates the pipeline end to end on CPU. NOT a test of the hypotheses.
+name: smoke_cpu
+out_dir: negative_space/results/smoke
+seed: 0
+model:
+  id: HuggingFaceTB/SmolLM-360M-Instruct
+  dtype: float32
+  device_map: cpu
+  batch_size: 16
+  max_new_tokens: 16
+data:
+  n_items: 120
+  n_keko_honest: 12
+extract:
+  layers: [4, 8, 16, 24, 32]
+  k_samples: 3
+  temperature: 0.7
+noise:
+  sites: [embedding, hidden]
+  hidden_layer: 16
+  levels: [0.0, 0.1, 0.25, 0.5, 1.0]
+  n_draws: 1
+analysis:
+  layer: 16
+  pooling: last
+  n_folds: 5
+  n_seeds: 3
+  n_boot: 1000
+  topology:
+    pca_dims: [3, 5, 8]
+    primary_pca_dim: 5
