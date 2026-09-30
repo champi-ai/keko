@@ -1,0 +1,30 @@
+# GPU run (single 24 GB GPU in bf16; see EXPERIMENT_PLAN.md). Qwen2.5-7B has 28 decoder layers.
+name: qwen2.5-7b-instruct
+out_dir: negative_space/results/qwen2.5-7b-instruct
+seed: 0
+model:
+  id: Qwen/Qwen2.5-7B-Instruct
+  dtype: bfloat16
+  device_map: auto
+  batch_size: 32
+  max_new_tokens: 24
+data:
+  n_items: null
+  n_keko_honest: 40
+  hf_dataset: trivia_qa     # adds open-domain items (network); set null for bundled only
+  hf_n: 2000
+extract:
+  layers: [4, 7, 10, 14, 18, 21, 24, 28]
+  k_samples: 10
+  temperature: 0.7
+noise:
+  sites: [embedding, hidden]
+  hidden_layer: 14
+  levels: [0.0, 0.05, 0.1, 0.2, 0.35, 0.5, 0.75, 1.0]
+  n_draws: 3
+analysis:
+  layer: 14
+  pooling: last
+  pca_dim: 64
+  n_seeds: 5
+  n_boot: 2000

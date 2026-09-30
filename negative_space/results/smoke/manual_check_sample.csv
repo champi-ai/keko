@@ -1,0 +1,46 @@
+id,question,gold,greedy_answer,auto_correct,manual_correct
+qa0008,What is the capital of Egypt?,Cairo,The capital of Egypt is Cairo.,True,
+qa0011,What is the capital of Peru?,Lima,The capital of Peru is Lima.,True,
+qa0015,What is the capital of Finland?,Helsinki,The capital of Finland is Helsinki.,True,
+qa0026,What is the capital of Pakistan?,Islamabad,The capital of Pakistan is Islamabad.,True,
+qa0030,What is the capital of Burkina Faso?,Ouagadougou,The capital of Burkina Faso is Ouagadougou.,True,
+qa0032,What is the capital of Kyrgyzstan?,Bishkek,The capital of Kyrgyzstan is Bishkek.,True,
+qa0039,What is the capital of Mongolia?,Ulaanbaatar | Ulan Bator,Mongolia is the capital city of Mongolia.,False,
+qa0042,What is the capital of Palau?,Ngerulmud,The capital of Palau is Koror.,False,
+qa0072,Which country is the city of Tabriz in?,Iran,Tabriz is the capital city of the Republic of Azerbaijan.,False,
+qa0073,Which country is the city of Samarkand in?,Uzbekistan,Samarkand is the city of Samarkand in Uzbekistan.,True,
+qa0096,What is the chemical symbol for sodium?,Na,"The chemical symbol for sodium is Na.
+
+Answer:",True,
+qa0097,What is the chemical symbol for potassium?,K,The chemical symbol for potassium is K.,True,
+qa0104,What is the chemical symbol for neon?,Ne,"Neon is the chemical symbol for the noble gas neon.
+
+Answer:",False,
+qa0121,What is the atomic number of copper?,29,The atomic number of copper is 29.,True,
+qa0124,What is the atomic number of uranium?,92,The atomic number of uranium is 92.,True,
+qa0136,How many bones are in the adult human body?,206,The adult human body has a total of 206 bones.,True,
+qa0149,What is the SI unit of force?,newton,The SI unit of force is the newton (N).,True,
+qa0168,In what year was Nelson Mandela released from prison?,1990,"Nelson Mandela was released from prison in 1990, after",True,
+qa0170,In what year was the Treaty of Versailles signed?,1919,"The Treaty of Versailles was signed on June 28, 191",False,
+qa0202,What is 24 + 29?,53,"24 + 29 = 43
+
+Answer:",False,
+qa0206,What is 39 + 47?,86,"To solve this problem, we can use the following steps:
+
+1. Understand",False,
+qa0208,What is 12 + 41?,53,"12 + 41 = 53
+
+Answer:",True,
+qa0211,What is 32 + 14?,46,"To answer this question, we need to understand the concept of addition and how it",False,
+qa0224,What is 668 + 526?,1194,"To solve this problem, we can use the following steps:
+1. Identify",False,
+qa0227,What is 284 + 135?,419,"To solve this problem, we can use the following steps:
+
+1. Identify",False,
+qa0249,What is 33 × 5?,165,"To calculate 33 × 5, we can use the multiplication algorithm.",False,
+qa0253,What is 62 × 62?,3844,62 × 62 is a mathematical expression that represents the product of,False,
+qa0258,What is 57 × 15?,855,"To calculate 57 × 15, we can use the multiplication table",False,
+qa0259,What is 27 × 46?,1242,"To solve this problem, we can use the following steps:
+
+Step",False,
+qa0263,What is 27 × 22?,594,"To calculate the product of 27 and 22, we can use",False,
