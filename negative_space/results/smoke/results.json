@@ -1,0 +1,659 @@
+{
+  "layer_key": "L16_last",
+  "n_items": 120,
+  "n_analysed": 114,
+  "label_counts": {
+    "known": 33,
+    "fragile": 19,
+    "unknown": 62,
+    "ambiguous": 6
+  },
+  "kind_counts": {
+    "answerable": 84,
+    "fictional": 19,
+    "unanswerable": 11,
+    "ambiguous": 6
+  },
+  "error_rate": 0.5263157894736842,
+  "hallucination_rate": 0.5263157894736842,
+  "folds_scored_frac": 1.0,
+  "N1": {
+    "target": "known vs not-known (fragile or unknown)",
+    "probe": {
+      "score": "activation probe",
+      "kind": "ours",
+      "auroc": 0.8907594463150019,
+      "auroc_lo": 0.8276386532636533,
+      "auroc_hi": 0.9458894897728738,
+      "auprc": 0.9588114358200059,
+      "auprc_lo": 0.9261710974717786,
+      "auprc_hi": 0.9822573436229597,
+      "n": 114
+    },
+    "surface": {
+      "score": "surface-only (length, domain, template)",
+      "kind": "baseline",
+      "auroc": 0.8005985783763562,
+      "auroc_lo": 0.7150020627338145,
+      "auroc_hi": 0.8721085330402722,
+      "auprc": 0.9228537954550424,
+      "auprc_lo": 0.8758920942428431,
+      "auprc_hi": 0.958297753951929,
+      "n": 114
+    },
+    "delta_vs_surface": [
+      0.09016086793864575,
+      0.0333201827242526,
+      0.14765065210559397,
+      0.002
+    ],
+    "selectivity": {
+      "task_auroc": 0.8651951614914578,
+      "control_auroc": 0.9942887967827905,
+      "selectivity": -0.12909363529133266
+    },
+    "probe_answerable_only": {
+      "score": "probe (answerable only)",
+      "kind": "ours",
+      "auroc": 0.7902554961378491,
+      "auroc_lo": 0.6858669555596534,
+      "auroc_hi": 0.8798376319985362,
+      "auprc": 0.9008657297917633,
+      "auprc_lo": 0.8356697303135061,
+      "auprc_hi": 0.9523240913381389,
+      "n": 84
+    }
+  },
+  "layerwise": [
+    {
+      "layer_key": "L4_last",
+      "probe_auroc_notknown": 0.8282828282828283,
+      "maha_auroc_error": 0.7441358024691358,
+      "knn_auroc_error": 0.7487654320987654
+    },
+    {
+      "layer_key": "L8_last",
+      "probe_auroc_notknown": 0.846988402543958,
+      "maha_auroc_error": 0.7580246913580247,
+      "knn_auroc_error": 0.7700617283950618
+    },
+    {
+      "layer_key": "L16_last",
+      "probe_auroc_notknown": 0.8855218855218855,
+      "maha_auroc_error": 0.783641975308642,
+      "knn_auroc_error": 0.7765432098765432
+    },
+    {
+      "layer_key": "L24_last",
+      "probe_auroc_notknown": 0.8907594463150019,
+      "maha_auroc_error": 0.6111111111111112,
+      "knn_auroc_error": 0.7552469135802469
+    },
+    {
+      "layer_key": "L32_last",
+      "probe_auroc_notknown": 0.8873924429479985,
+      "maha_auroc_error": 0.25308641975308643,
+      "knn_auroc_error": 0.4907407407407408
+    },
+    {
+      "layer_key": "L4_mean",
+      "probe_auroc_notknown": 0.8469884025439581,
+      "maha_auroc_error": 0.4024691358024691,
+      "knn_auroc_error": 0.7290123456790123
+    },
+    {
+      "layer_key": "L8_mean",
+      "probe_auroc_notknown": 0.8496071829405162,
+      "maha_auroc_error": 0.37870370370370376,
+      "knn_auroc_error": 0.7345679012345679
+    },
+    {
+      "layer_key": "L16_mean",
+      "probe_auroc_notknown": 0.8694350916573139,
+      "maha_auroc_error": 0.5780864197530865,
+      "knn_auroc_error": 0.7935185185185185
+    },
+    {
+      "layer_key": "L24_mean",
+      "probe_auroc_notknown": 0.8686868686868686,
+      "maha_auroc_error": 0.5756172839506173,
+      "knn_auroc_error": 0.7685185185185186
+    },
+    {
+      "layer_key": "L32_mean",
+      "probe_auroc_notknown": 0.8604564160119715,
+      "maha_auroc_error": 0.5441358024691358,
+      "knn_auroc_error": 0.7345679012345679
+    }
+  ],
+  "N2_error_detection": [
+    {
+      "score": "1 - max prob (first token)",
+      "kind": "baseline",
+      "auroc": 0.7438271604938271,
+      "auroc_lo": 0.6498586527522885,
+      "auroc_hi": 0.8337978622090216,
+      "auprc": 0.8046069514530122,
+      "auprc_lo": 0.7144742479871915,
+      "auprc_hi": 0.886404489331435,
+      "n": 114
+    },
+    {
+      "score": "1 - max prob (mean over answer)",
+      "kind": "baseline",
+      "auroc": 0.8512345679012345,
+      "auroc_lo": 0.7743060258211231,
+      "auroc_hi": 0.9207709777863379,
+      "auprc": 0.8821901842286188,
+      "auprc_lo": 0.8095440011806082,
+      "auprc_hi": 0.9405833934406768,
+      "n": 114
+    },
+    {
+      "score": "token entropy (mean)",
+      "kind": "baseline",
+      "auroc": 0.8703703703703703,
+      "auroc_lo": 0.7998045417226451,
+      "auroc_hi": 0.9374673375706217,
+      "auprc": 0.8901778998003095,
+      "auprc_lo": 0.8135783354392395,
+      "auprc_hi": 0.9515860134076323,
+      "n": 114
+    },
+    {
+      "score": "keko U score (v4.2 \u00a78, mean)",
+      "kind": "baseline",
+      "auroc": 0.8546296296296296,
+      "auroc_lo": 0.7795121784345922,
+      "auroc_hi": 0.9223565837387172,
+      "auprc": 0.8837125715657668,
+      "auprc_lo": 0.8084860805424358,
+      "auprc_hi": 0.9414611052343231,
+      "n": 114
+    },
+    {
+      "score": "sampling inconsistency (1 - consistency)",
+      "kind": "baseline",
+      "auroc": 0.8868827160493826,
+      "auroc_lo": 0.8193144915901646,
+      "auroc_hi": 0.9442738171258286,
+      "auprc": 0.8664025084092983,
+      "auprc_lo": 0.777932908788219,
+      "auprc_hi": 0.9397957552579214,
+      "n": 114
+    },
+    {
+      "score": "semantic-entropy proxy (answer clusters)",
+      "kind": "baseline",
+      "auroc": 0.8728395061728396,
+      "auroc_lo": 0.8018539128923827,
+      "auroc_hi": 0.9325246601915033,
+      "auprc": 0.8487753147235906,
+      "auprc_lo": 0.7534457056853369,
+      "auprc_hi": 0.9271534249957255,
+      "n": 114
+    },
+    {
+      "score": "surface-only classifier",
+      "kind": "baseline",
+      "auroc": 0.8435185185185186,
+      "auroc_lo": 0.7646591970121381,
+      "auroc_hi": 0.9074074074074073,
+      "auprc": 0.8646225875103868,
+      "auprc_lo": 0.7782547687147071,
+      "auprc_hi": 0.9320498528288792,
+      "n": 114
+    },
+    {
+      "score": "negative score (combined)",
+      "kind": "ours",
+      "auroc": 0.8243827160493827,
+      "auroc_lo": 0.7460308908045977,
+      "auroc_hi": 0.8889008620689655,
+      "auprc": 0.8358338740006346,
+      "auprc_lo": 0.7484336867278354,
+      "auprc_hi": 0.9128801312789392,
+      "n": 114
+    },
+    {
+      "score": "probe P(not known)",
+      "kind": "ours",
+      "auroc": 0.8629629629629629,
+      "auroc_lo": 0.7911954408515629,
+      "auroc_hi": 0.9221988795518207,
+      "auprc": 0.8752280131215358,
+      "auprc_lo": 0.8010403098952389,
+      "auprc_hi": 0.9377195334539122,
+      "n": 114
+    },
+    {
+      "score": "kNN distance to known",
+      "kind": "ours",
+      "auroc": 0.7669753086419754,
+      "auroc_lo": 0.6797935649355528,
+      "auroc_hi": 0.8437666737550262,
+      "auprc": 0.7938763422135895,
+      "auprc_lo": 0.6916520772211083,
+      "auprc_hi": 0.8910267873976425,
+      "n": 114
+    },
+    {
+      "score": "Mahalanobis-LW distance to known",
+      "kind": "ours",
+      "auroc": 0.7882716049382716,
+      "auroc_lo": 0.7060457475926659,
+      "auroc_hi": 0.8618766612095532,
+      "auprc": 0.8360363760237128,
+      "auprc_lo": 0.7584428203822894,
+      "auprc_hi": 0.9030963294489156,
+      "n": 114
+    },
+    {
+      "score": "predicted flip level (negated)",
+      "kind": "ours",
+      "auroc": 0.7805555555555556,
+      "auroc_lo": 0.6901047453703703,
+      "auroc_hi": 0.8663208977242758,
+      "auprc": 0.7763111334152902,
+      "auprc_lo": 0.6583277887035296,
+      "auprc_hi": 0.8999254628387648,
+      "n": 114
+    },
+    {
+      "score": "measured flip level (negated; needs noise at test time)",
+      "kind": "ours",
+      "auroc": 0.8427469135802469,
+      "auroc_lo": 0.7718566205431717,
+      "auroc_hi": 0.9081885856079405,
+      "auprc": 0.8280521468823202,
+      "auprc_lo": 0.7374878474931816,
+      "auprc_hi": 0.9081731559616013,
+      "n": 114
+    }
+  ],
+  "N2_paired": [
+    {
+      "ours": "negative score (combined)",
+      "baseline": "token entropy (mean)",
+      "delta": -0.045987654320987614,
+      "lo": -0.11488453669522913,
+      "hi": 0.027324316773594787,
+      "p": 0.238
+    },
+    {
+      "ours": "negative score (combined)",
+      "baseline": "1 - max prob (first token)",
+      "delta": 0.0805555555555556,
+      "lo": 0.0027426454682079817,
+      "hi": 0.16252282753667782,
+      "p": 0.048
+    },
+    {
+      "ours": "negative score (combined)",
+      "baseline": "sampling inconsistency (1 - consistency)",
+      "delta": -0.06249999999999989,
+      "lo": -0.13910059799382715,
+      "hi": 0.011308040350449891,
+      "p": 0.096
+    },
+    {
+      "ours": "kNN distance to known",
+      "baseline": "token entropy (mean)",
+      "delta": -0.10339506172839497,
+      "lo": -0.2020151003837327,
+      "hi": -0.006791772604481235,
+      "p": 0.042
+    },
+    {
+      "ours": "kNN distance to known",
+      "baseline": "1 - max prob (first token)",
+      "delta": 0.02314814814814825,
+      "lo": -0.0661003493172435,
+      "hi": 0.11299813055409548,
+      "p": 0.582
+    },
+    {
+      "ours": "kNN distance to known",
+      "baseline": "sampling inconsistency (1 - consistency)",
+      "delta": -0.11990740740740724,
+      "lo": -0.2158908572555926,
+      "hi": -0.02123142777689507,
+      "p": 0.014
+    },
+    {
+      "ours": "Mahalanobis-LW distance to known",
+      "baseline": "token entropy (mean)",
+      "delta": -0.08209876543209871,
+      "lo": -0.1721165351517362,
+      "hi": 0.005931553884836981,
+      "p": 0.074
+    },
+    {
+      "ours": "Mahalanobis-LW distance to known",
+      "baseline": "1 - max prob (first token)",
+      "delta": 0.04444444444444451,
+      "lo": -0.04151477767849296,
+      "hi": 0.13205847074915963,
+      "p": 0.318
+    },
+    {
+      "ours": "Mahalanobis-LW distance to known",
+      "baseline": "sampling inconsistency (1 - consistency)",
+      "delta": -0.09861111111111098,
+      "lo": -0.1909157135076252,
+      "hi": -0.01038120232798354,
+      "p": 0.026
+    }
+  ],
+  "calibration": {
+    "negative_score_ece": [
+      0.0651678119787594,
+      0.06932288293911586,
+      0.1688013650621913
+    ],
+    "one_minus_maxprob_ece": [
+      0.08517726144769734,
+      0.07374684443337876,
+      0.19438525296813036
+    ]
+  },
+  "held_out_domain": [
+    {
+      "domain": "arithmetic",
+      "n": 26,
+      "error_rate": 0.8846153846153846,
+      "negative_score_auroc": 0.26086956521739135,
+      "entropy_auroc": 0.6666666666666666,
+      "maxprob_auroc": 0.8115942028985508
+    },
+    {
+      "domain": "dates",
+      "n": 20,
+      "error_rate": 0.6,
+      "negative_score_auroc": 0.5625,
+      "entropy_auroc": 0.6666666666666666,
+      "maxprob_auroc": 0.5
+    },
+    {
+      "domain": "geography",
+      "n": 37,
+      "error_rate": 0.32432432432432434,
+      "negative_score_auroc": 0.7133333333333334,
+      "entropy_auroc": 0.9266666666666666,
+      "maxprob_auroc": 0.6933333333333334
+    },
+    {
+      "domain": "science",
+      "n": 26,
+      "error_rate": 0.3076923076923077,
+      "negative_score_auroc": 0.9791666666666667,
+      "entropy_auroc": 0.9513888888888888,
+      "maxprob_auroc": 0.7222222222222222
+    },
+    {
+      "domain": "unanswerable_keko",
+      "n": 5,
+      "error_rate": 1.0,
+      "negative_score_auroc": NaN,
+      "entropy_auroc": NaN,
+      "maxprob_auroc": NaN
+    }
+  ],
+  "N3": {
+    "levels": [
+      0.0,
+      0.10000000149011612,
+      0.25,
+      0.5,
+      1.0
+    ],
+    "sites": {
+      "embedding": {
+        "curves": {
+          "known": [
+            1.0,
+            0.9696969985961914,
+            1.0,
+            0.939393937587738,
+            0.09090909361839294
+          ],
+          "fragile": [
+            1.0,
+            1.0,
+            0.7368420958518982,
+            0.5789473652839661,
+            0.0
+          ],
+          "unknown": [
+            1.0,
+            0.8709677457809448,
+            0.6612903475761414,
+            0.27419355511665344,
+            0.0
+          ]
+        },
+        "counts": {
+          "known": 33,
+          "fragile": 19,
+          "unknown": 62
+        },
+        "flip_auroc_notknown": [
+          0.8121960344182565,
+          0.7389888046309163,
+          0.878719775723769
+        ],
+        "flip_auroc_error": [
+          0.7679012345679013,
+          0.6874304582944288,
+          0.8430164632165863
+        ],
+        "mannwhitney_known_gt_notknown_p": 1.3302958734584536e-08,
+        "censored_frac": 0.017543859649122806,
+        "spearman_flip_vs_answer_tokens": -0.36533856436301887,
+        "spearman_flip_vs_prompt_tokens": -0.30734385635212025,
+        "median_flip_by_label": {
+          "known": 1.0,
+          "fragile": 0.5,
+          "unknown": 0.5
+        }
+      },
+      "hidden": {
+        "curves": {
+          "known": [
+            1.0,
+            0.9696969985961914,
+            0.5151515007019043,
+            0.0,
+            0.0
+          ],
+          "fragile": [
+            1.0,
+            0.8947368264198303,
+            0.42105263471603394,
+            0.05263157933950424,
+            0.0
+          ],
+          "unknown": [
+            1.0,
+            0.35483869910240173,
+            0.08064515888690948,
+            0.0,
+            0.0
+          ]
+        },
+        "counts": {
+          "known": 33,
+          "fragile": 19,
+          "unknown": 62
+        },
+        "flip_auroc_notknown": [
+          0.7962962962962963,
+          0.7179405054405055,
+          0.8649535321423424
+        ],
+        "flip_auroc_error": [
+          0.8381172839506172,
+          0.7709234910584504,
+          0.8995390441032183
+        ],
+        "mannwhitney_known_gt_notknown_p": 6.750469339067422e-08,
+        "censored_frac": 0.0,
+        "spearman_flip_vs_answer_tokens": -0.3771533868885464,
+        "spearman_flip_vs_prompt_tokens": -0.17218517531248684,
+        "median_flip_by_label": {
+          "known": 0.5,
+          "fragile": 0.25,
+          "unknown": 0.10000000149011612
+        }
+      }
+    },
+    "flip_regression_spearman_oof": 0.5058546680967819
+  },
+  "N4_sensitivity": [
+    {
+      "available": true,
+      "pca_dim": 3,
+      "n_points": 33,
+      "n_h1": 2,
+      "max_h1_persistence": 0.006947603076696396,
+      "null_threshold": 0.23208540976047515,
+      "n_significant_holes": 0,
+      "bootstrap_frac_above_null": 0.0,
+      "note": ""
+    },
+    {
+      "available": true,
+      "pca_dim": 5,
+      "n_points": 33,
+      "n_h1": 5,
+      "max_h1_persistence": 0.05379819869995117,
+      "null_threshold": 0.2180675685405731,
+      "n_significant_holes": 0,
+      "bootstrap_frac_above_null": 0.05,
+      "note": ""
+    },
+    {
+      "available": true,
+      "pca_dim": 8,
+      "n_points": 33,
+      "n_h1": 3,
+      "max_h1_persistence": 0.0045250654220581055,
+      "null_threshold": 0.1877935588359832,
+      "n_significant_holes": 0,
+      "bootstrap_frac_above_null": 0.0,
+      "note": ""
+    }
+  ],
+  "N4": {
+    "primary": {
+      "available": true,
+      "pca_dim": 5,
+      "n_points": 33,
+      "n_h1": 5,
+      "max_h1_persistence": 0.05379819869995117,
+      "null_threshold": 0.2180675685405731,
+      "n_significant_holes": 0,
+      "bootstrap_frac_above_null": 0.05,
+      "note": ""
+    },
+    "n_notknown_in_holes": 0,
+    "n_confident_in_holes": 0,
+    "error_rate_in_holes": NaN,
+    "mean_conf_in_holes": NaN
+  },
+  "N5_illustrative": {
+    "region_counts": {
+      "interior": 22,
+      "boundary": 56,
+      "hole": 0,
+      "outside": 36
+    },
+    "by_region": {
+      "interior": {
+        "n": 22,
+        "error_rate": 0.045454545454545456,
+        "labels": {
+          "known": 15,
+          "fragile": 6,
+          "unknown": 1
+        }
+      },
+      "boundary": {
+        "n": 56,
+        "error_rate": 0.5,
+        "labels": {
+          "known": 17,
+          "fragile": 9,
+          "unknown": 30
+        }
+      },
+      "hole": {
+        "n": 0,
+        "error_rate": NaN,
+        "labels": {
+          "known": 0,
+          "fragile": 0,
+          "unknown": 0
+        }
+      },
+      "outside": {
+        "n": 36,
+        "error_rate": 0.8611111111111112,
+        "labels": {
+          "known": 1,
+          "fragile": 4,
+          "unknown": 31
+        }
+      }
+    },
+    "behaviour_vs_keko_window": {
+      "abstain_or_request_grounding": {
+        "clarify_and_adaptive_k_retrieval": 6,
+        "frozen_core_answers": 30
+      },
+      "clarify_and_adaptive_k_retrieval": {
+        "frozen_core_answers": 26,
+        "clarify_and_adaptive_k_retrieval": 30
+      },
+      "frozen_core_answers": {
+        "frozen_core_answers": 12,
+        "clarify_and_adaptive_k_retrieval": 10
+      }
+    },
+    "keko_window_intervention_rate": 0.40350877192982454,
+    "keko_window_errors_caught": 21,
+    "promoter_intervention_rate": 0.8070175438596491,
+    "promoter_errors_caught": 59,
+    "matched_rate": [
+      {
+        "rate": 0.1,
+        "n_intervene": 11,
+        "n_errors": 60,
+        "errors_caught_negative_score": 11,
+        "errors_caught_low_maxprob": 11
+      },
+      {
+        "rate": 0.2,
+        "n_intervene": 23,
+        "n_errors": 60,
+        "errors_caught_negative_score": 20,
+        "errors_caught_low_maxprob": 20
+      },
+      {
+        "rate": 0.3,
+        "n_intervene": 34,
+        "n_errors": 60,
+        "errors_caught_negative_score": 30,
+        "errors_caught_low_maxprob": 28
+      },
+      {
+        "rate": 0.404,
+        "n_intervene": 46,
+        "n_errors": 60,
+        "errors_caught_negative_score": 36,
+        "errors_caught_low_maxprob": 36
+      }
+    ]
+  },
+  "ambiguous_n": 6
+}
